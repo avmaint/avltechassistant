@@ -2884,20 +2884,30 @@ def post_dashboard_klang_buildconsensus():
 
 
 MANUALS_BASE_URL = os.environ.get("MANUALS_BASE_URL", "http://localhost:80")
+_ASSET_TAG_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 
 @app.get("/manuals/{asset_tag}")
 def get_manuals(asset_tag: str):
     """Proxy manuals lookup to the media_arts_home server."""
-    url = f"{MANUALS_BASE_URL}/api/manuals/{asset_tag}"
+    if not _ASSET_TAG_RE.match(asset_tag):
+        raise HTTPException(status_code=400, detail="Invalid asset tag")
+
+    base = MANUALS_BASE_URL.rstrip("/")
+    url = f"{base}/api/manuals/{asset_tag}"
     try:
         with _urllib_request.urlopen(url, timeout=5) as resp:
             data = _json.loads(resp.read().decode())
-        # Rewrite relative URLs to absolute so the browser can reach the file server
-        base = MANUALS_BASE_URL.rstrip("/")
+
+        # Rewrite relative paths to absolute URLs, rejecting anything that
+        # isn't a simple absolute path (no protocol-relative or external URLs).
         for manual in data.get("manuals", []):
-            if manual.get("url", "").startswith("/"):
-                manual["url"] = f"{base}{manual['url']}"
+            raw = manual.get("url", "")
+            if raw.startswith("/") and not raw.startswith("//"):
+                manual["url"] = f"{base}{raw}"
+            elif not raw.startswith("http"):
+                manual["url"] = ""  # drop anything unexpected
+
         return data
     except _urllib_error.HTTPError as exc:
         raise HTTPException(status_code=exc.code, detail=str(exc))
