@@ -1,0 +1,12 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pid
+.frontend.pid
+.backend.pid
+frontend.log
+backend.log
+data/~*.xlsx
+test.out
