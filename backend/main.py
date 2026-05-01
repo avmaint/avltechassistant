@@ -2892,7 +2892,13 @@ def get_manuals(asset_tag: str):
     url = f"{MANUALS_BASE_URL}/api/manuals/{asset_tag}"
     try:
         with _urllib_request.urlopen(url, timeout=5) as resp:
-            return _json.loads(resp.read().decode())
+            data = _json.loads(resp.read().decode())
+        # Rewrite relative URLs to absolute so the browser can reach the file server
+        base = MANUALS_BASE_URL.rstrip("/")
+        for manual in data.get("manuals", []):
+            if manual.get("url", "").startswith("/"):
+                manual["url"] = f"{base}{manual['url']}"
+        return data
     except _urllib_error.HTTPError as exc:
         raise HTTPException(status_code=exc.code, detail=str(exc))
     except Exception as exc:
