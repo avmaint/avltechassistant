@@ -10,7 +10,7 @@ PID_FILE_BACK="$APP_DIR/.backend.pid"
 LOG_FILE_FRONT="$APP_DIR/frontend.log"
 LOG_FILE_BACK="$APP_DIR/backend.log"
 
-FRONTEND_PORT=8000
+FRONTEND_PORT=8080
 BACKEND_PORT=9000
 
 install_deps() {
