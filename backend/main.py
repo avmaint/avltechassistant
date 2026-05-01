@@ -2881,3 +2881,19 @@ def post_dashboard_klang_buildconsensus():
 
             return JSONResponse(status_code=409, content=body)
         return {"ok": False, "error": f"Node-RED unreachable: {exc}"}
+
+
+MANUALS_BASE_URL = os.environ.get("MANUALS_BASE_URL", "http://localhost:80")
+
+
+@app.get("/manuals/{asset_tag}")
+def get_manuals(asset_tag: str):
+    """Proxy manuals lookup to the media_arts_home server."""
+    url = f"{MANUALS_BASE_URL}/api/manuals/{asset_tag}"
+    try:
+        with _urllib_request.urlopen(url, timeout=5) as resp:
+            return _json.loads(resp.read().decode())
+    except _urllib_error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Manuals service unreachable: {exc}")
