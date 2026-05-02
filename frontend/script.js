@@ -3723,4 +3723,37 @@ document.addEventListener("DOMContentLoaded", () => {
     // Dashboard is the default active tab — load it on startup
     fetchAndRenderDashboard();
     scheduleDashboardRefresh();
+
+    // ── Deep-link handling ────────────────────────────────────────────────────
+    // Supports ?tab=assetDetails&tag=ZVVU-0001 and ?tab=knowledgeBase&issue=KB0001
+    const dlParams = new URLSearchParams(window.location.search);
+    const dlTab    = dlParams.get("tab");
+    const dlTag    = dlParams.get("tag");
+    const dlIssue  = dlParams.get("issue");
+
+    function activateTab(tabId) {
+        tabButtons.forEach(btn => btn.classList.remove("active"));
+        tabContents.forEach(c => c.classList.remove("active"));
+        const btn = document.querySelector(`.tab-button[data-tab="${tabId}"]`);
+        if (btn) btn.classList.add("active");
+        const content = document.getElementById(tabId);
+        if (content) content.classList.add("active");
+    }
+
+    if (dlTab === "assetDetails" && dlTag) {
+        activateTab("assetDetails");
+        const input = document.getElementById(ASSET_DETAILS_INPUT_ID);
+        if (input) input.value = dlTag;
+        fetchAndRenderAssetDetails(dlTag);
+    } else if (dlTab === "knowledgeBase" && dlIssue) {
+        activateTab("knowledgeBase");
+        const issueInput = document.getElementById("kbIssueIdSearch");
+        if (issueInput) issueInput.value = dlIssue;
+        // Trigger KB search for the specific issue
+        const params = new URLSearchParams({ issue_id: dlIssue });
+        fetch(`${API_BASE_URL}/knowledgebase/search?${params}`)
+            .then(r => r.ok ? r.json() : [])
+            .then(issues => renderKBResults(issues))
+            .catch(err => console.error("Deep-link KB search failed:", err));
+    }
 });
