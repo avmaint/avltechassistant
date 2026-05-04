@@ -212,6 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const colorEdgesCheckbox = document.getElementById("colorEdgesByProtocol");
     const collapseStrategySelect = document.getElementById("collapseStrategySelect");
     const excludeInternalRoutesCheckbox = document.getElementById("excludeInternalRoutes");
+    const includePhysicalRoutesCheckbox = document.getElementById("includePhysicalRoutes");
+    const includeLogicalRoutesCheckbox  = document.getElementById("includeLogicalRoutes");
 
     // Asset Details tab elements
     const assetDetailsTagInput = document.getElementById(ASSET_DETAILS_INPUT_ID);
@@ -996,7 +998,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const colorNodesEnabled = colorNodesCheckbox ? colorNodesCheckbox.checked : false;
         const colorEdgesEnabled = colorEdgesCheckbox ? colorEdgesCheckbox.checked : false;
         const collapseStrategy = collapseStrategySelect ? collapseStrategySelect.value : "none";
-        const excludeInternalRoutes = excludeInternalRoutesCheckbox ? excludeInternalRoutesCheckbox.checked : true;
+        const excludeInternalRoutes   = excludeInternalRoutesCheckbox ? excludeInternalRoutesCheckbox.checked : true;
+        const includePhysicalRoutes   = includePhysicalRoutesCheckbox ? includePhysicalRoutesCheckbox.checked : true;
+        const includeLogicalRoutes    = includeLogicalRoutesCheckbox  ? includeLogicalRoutesCheckbox.checked  : false;
         const combinedForceInclude = forceIncludeTags instanceof Set ? new Set(forceIncludeTags) : new Set();
         selectedAssetsList.forEach(tag => combinedForceInclude.add(tag));
 
@@ -1010,6 +1014,8 @@ document.addEventListener("DOMContentLoaded", () => {
         cableParams.append("node_fields", selectedNodeFields.join(','));
         cableParams.append("edge_fields", selectedEdgeFields.join(','));
         cableParams.append("exclude_internal_routes", excludeInternalRoutes ? "true" : "false");
+        cableParams.append("include_physical_routes", includePhysicalRoutes ? "true" : "false");
+        cableParams.append("include_logical_routes",  includeLogicalRoutes  ? "true" : "false");
 
         if (additionalAssets) {
             cableParams.append("additional_asset_tags", additionalAssets);
@@ -1130,6 +1136,8 @@ document.addEventListener("DOMContentLoaded", () => {
         dotParams.append("color_nodes_by_category", colorNodesEnabled ? "true" : "false");
         dotParams.append("color_edges_by_protocol", colorEdgesEnabled ? "true" : "false");
         dotParams.append("exclude_internal_routes", excludeInternalRoutes ? "true" : "false");
+        dotParams.append("include_physical_routes", includePhysicalRoutes ? "true" : "false");
+        dotParams.append("include_logical_routes",  includeLogicalRoutes  ? "true" : "false");
         if (collapseStrategy && collapseStrategy !== "none") {
             dotParams.append("collapse_strategy", collapseStrategy);
         }

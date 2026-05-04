@@ -1916,6 +1916,8 @@ async def filter_cables(
         None
     ),  # Comma-separated cable IDs to suppress
     exclude_internal_routes: bool = True,
+    include_physical_routes: bool = Query(True),
+    include_logical_routes: bool = Query(False),
 ):
     """
     Filter cables based on a target asset tag, direction, optional cable type,
@@ -1979,6 +1981,13 @@ async def filter_cables(
                 & (candidate_cables["Type"].str.contains("route", case=False, na=False))
             )
         ]
+
+    # Filter by physical/logical route type
+    is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
+    if not include_logical_routes:
+        candidate_cables = candidate_cables[~is_logical]
+    if not include_physical_routes:
+        candidate_cables = candidate_cables[is_logical]
 
     # If we were given an explicit visible set, only include cables whose endpoints are visible.
     if visible_asset_tags:
@@ -2054,6 +2063,8 @@ async def get_graphviz_dot(
     color_edges_by_protocol: bool = Query(False),
     collapse_strategy: Optional[str] = Query("none"),
     exclude_internal_routes: bool = True,
+    include_physical_routes: bool = Query(True),
+    include_logical_routes: bool = Query(False),
 ):
     """
     Generates a Graphviz DOT string for filtered cables and assets.
@@ -2117,6 +2128,13 @@ async def get_graphviz_dot(
                 & (candidate_cables["Type"].str.contains("route", case=False, na=False))
             )
         ]
+
+    # Filter by physical/logical route type
+    is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
+    if not include_logical_routes:
+        candidate_cables = candidate_cables[~is_logical]
+    if not include_physical_routes:
+        candidate_cables = candidate_cables[is_logical]
 
     visible_norm_set = (
         set(normalize_tag_list(visible_asset_tags)) if visible_asset_tags else set()
