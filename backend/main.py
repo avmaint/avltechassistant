@@ -3,12 +3,19 @@ import datetime
 import hashlib
 import html  # Import html module
 import json as _json
+import logging
 import os
 import re
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 import graphviz  # Import graphviz
 import numpy as np

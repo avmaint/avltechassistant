@@ -5,10 +5,7 @@ const API_BASE_URL = (() => {
     const meta = document.querySelector('meta[name="api-base-url"]');
     if (meta && meta.content) return meta.content.replace(/\/$/, "");
     if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/$/, "");
-    if (window.location.origin && window.location.origin.startsWith("http")) {
-        return window.location.origin.replace(/\/$/, "");
-    }
-    return "http://localhost:9000";
+    return `http://${window.location.hostname}:9000`;
 })();
 
 const DEFAULT_NODE_FIELDS = ["tag", "manufacturer", "model", "usage"];
