@@ -1918,6 +1918,7 @@ async def filter_cables(
     exclude_internal_routes: bool = True,
     include_physical_routes: bool = Query(True),
     include_logical_routes: bool = Query(False),
+    include_passthroughs: bool = Query(True),
 ):
     """
     Filter cables based on a target asset tag, direction, optional cable type,
@@ -1988,6 +1989,11 @@ async def filter_cables(
         candidate_cables = candidate_cables[~is_logical]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
+
+    # Filter passthroughs (Type contains "passthrough")
+    if not include_passthroughs:
+        is_passthrough = candidate_cables["Type"].str.contains("passthrough", case=False, na=False)
+        candidate_cables = candidate_cables[~is_passthrough]
 
     # If we were given an explicit visible set, only include cables whose endpoints are visible.
     if visible_asset_tags:
@@ -2065,6 +2071,7 @@ async def get_graphviz_dot(
     exclude_internal_routes: bool = True,
     include_physical_routes: bool = Query(True),
     include_logical_routes: bool = Query(False),
+    include_passthroughs: bool = Query(True),
 ):
     """
     Generates a Graphviz DOT string for filtered cables and assets.
@@ -2135,6 +2142,11 @@ async def get_graphviz_dot(
         candidate_cables = candidate_cables[~is_logical]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
+
+    # Filter passthroughs (Type contains "passthrough")
+    if not include_passthroughs:
+        is_passthrough = candidate_cables["Type"].str.contains("passthrough", case=False, na=False)
+        candidate_cables = candidate_cables[~is_passthrough]
 
     visible_norm_set = (
         set(normalize_tag_list(visible_asset_tags)) if visible_asset_tags else set()
