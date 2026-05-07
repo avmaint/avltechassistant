@@ -1002,7 +1002,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const excludeInternalRoutes   = excludeInternalRoutesCheckbox  ? excludeInternalRoutesCheckbox.checked  : true;
         const includePhysicalRoutes   = includePhysicalRoutesCheckbox  ? includePhysicalRoutesCheckbox.checked  : true;
         const includeLogicalRoutes    = includeLogicalRoutesCheckbox   ? includeLogicalRoutesCheckbox.checked   : false;
-        const includePassthroughs     = includePassthroughsCheckbox    ? includePassthroughsCheckbox.checked    : true;
+        const includePassthroughs     = includePassthroughsCheckbox    ? includePassthroughsCheckbox.checked    : false;
         const combinedForceInclude = forceIncludeTags instanceof Set ? new Set(forceIncludeTags) : new Set();
         selectedAssetsList.forEach(tag => combinedForceInclude.add(tag));
 
@@ -1450,6 +1450,7 @@ document.addEventListener("DOMContentLoaded", () => {
         params.append("target_tag", displayTag);
         params.append("direction", "both");
         params.append("exclude_internal_routes", "false");
+        params.append("include_passthroughs", "true");
 
         let allCables = [];
         try {
@@ -1466,12 +1467,13 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Internal route cables: SrcTag == DstTag == this node, type contains "route".
+        // Internal route/passthrough cables: SrcTag == DstTag == this node.
         const routeCables = allCables.filter(c => {
             const src = (c.SrcTag || '').trim().toLowerCase();
             const dst = (c.DstTag || '').trim().toLowerCase();
+            const type = (c.Type || '').toLowerCase();
             return src === tagLower && dst === tagLower &&
-                   (c.Type || '').toLowerCase().includes('route');
+                   (type.includes('route') || type.includes('passthrough'));
         });
 
         // All external inbound cables (arrive at this node from elsewhere).
@@ -1588,7 +1590,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (tagsToAdd.size === 0) {
             const hint = routeCables.length === 0
-                ? ` (${displayTag} has no internal route cables — right-click the device that contains the route, e.g. a matrix switcher)`
+                ? ` (${displayTag} has no internal route or passthrough cables — right-click the patch panel or matrix switcher that contains the route)`
                 : '';
             setDiagramStatus(`No ${label} connections found via routes for ${displayTag}.${hint}`, "warn");
             return;

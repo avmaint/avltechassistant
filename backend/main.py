@@ -1918,7 +1918,7 @@ async def filter_cables(
     exclude_internal_routes: bool = True,
     include_physical_routes: bool = Query(True),
     include_logical_routes: bool = Query(False),
-    include_passthroughs: bool = Query(True),
+    include_passthroughs: bool = Query(False),
 ):
     """
     Filter cables based on a target asset tag, direction, optional cable type,
@@ -2071,7 +2071,7 @@ async def get_graphviz_dot(
     exclude_internal_routes: bool = True,
     include_physical_routes: bool = Query(True),
     include_logical_routes: bool = Query(False),
-    include_passthroughs: bool = Query(True),
+    include_passthroughs: bool = Query(False),
 ):
     """
     Generates a Graphviz DOT string for filtered cables and assets.
