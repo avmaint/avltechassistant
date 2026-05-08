@@ -104,6 +104,7 @@ const expansionResultLog = new Map(); // node+direction -> includesNewNodes bool
 // hidden node's cables from the adjacency maps entirely.
 const hiddenNodeNeighbors = new Map(); // hiddenTag -> Set of neighbor tags
 const selectedAssetTags = new Set();
+let currentDiagramCableData = []; // Cables currently shown in the diagram
 
 function showLoadingSpinner(container, message = "Loading…") {
     if (!container) return;
@@ -1051,6 +1052,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 cableData = [];
             }
+            currentDiagramCableData = cableData;
             renderTable(cableData, cableTableContainer, 'cableResults'); // Pass table ID
         } catch (error) {
             console.error("Error fetching cable data:", error);
@@ -1490,9 +1492,10 @@ document.addEventListener("DOMContentLoaded", () => {
             return src === tagLower && dst !== tagLower;
         });
 
-        // Visible node tags (lowercase) — used to restrict the "anchor" side of the traversal.
-        const visibleTags = new Set(
-            activeDiagramAssetTags.map(t => (t || '').trim().toLowerCase()).filter(Boolean)
+        // Cable IDs currently shown in the diagram — used to restrict the "anchor" side
+        // of the traversal to only connections the user can actually see.
+        const shownCableIds = new Set(
+            currentDiagramCableData.map(c => (c.Tag || '').trim()).filter(Boolean)
         );
 
         const tagsToAdd = new Set();
@@ -1501,10 +1504,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const relevantCableIds = new Set();
 
         if (mode === 'inbound_for_outbound') {
-            // Anchor: outbound cables to currently visible nodes (restrict discovery starting point).
-            // Discovery: ALL inbound cables — we want to find new upstream sources.
+            // Anchor: outbound cables that are currently shown in the diagram.
             const visibleOutbound = allOutbound.filter(
-                c => visibleTags.has((c.DstTag || '').trim().toLowerCase())
+                c => shownCableIds.has((c.Tag || '').trim())
             );
             const outboundSrcPorts = new Set(
                 visibleOutbound.map(c => (c.SrcPort || '').trim().toLowerCase()).filter(Boolean)
@@ -1527,10 +1529,9 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         } else {
             // outbound_for_inbound:
-            // Anchor: inbound cables from currently visible nodes (restrict discovery starting point).
-            // Discovery: ALL outbound cables — we want to find new downstream destinations.
+            // Anchor: inbound cables that are currently shown in the diagram.
             const visibleInbound = allInbound.filter(
-                c => visibleTags.has((c.SrcTag || '').trim().toLowerCase())
+                c => shownCableIds.has((c.Tag || '').trim())
             );
             const inboundDstPorts = new Set(
                 visibleInbound.map(c => (c.DstPort || '').trim().toLowerCase()).filter(Boolean)
