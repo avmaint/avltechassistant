@@ -1224,18 +1224,14 @@ async def get_asset_details(asset_tag: str):
 
 @app.get("/assets/{asset_tag}/network")
 def get_asset_network(asset_tag: str):
-    """Returns NIC records from network.xlsx for the given asset tag."""
+    """Returns NIC records from network.xlsx for the given asset tag as a flat list."""
     target_norm = normalize_tag_value(asset_tag)
     if not target_norm or target_norm not in VALID_ASSET_TAGS_NORMALIZED:
         raise HTTPException(status_code=404, detail=f"Asset tag not found: {asset_tag}")
     df_net = load_network_data()
     nics = _network_rows_for_tag(df_net, asset_tag)
-    exceptions = [
-        {"nic": n["nic"], "message": "Monitor=Yes but no IP configured"}
-        for n in nics
-        if n["monitor"] and not n["ip"]
-    ]
-    return {"asset_tag": asset_tag, "nics": nics, "exceptions": exceptions}
+    display_tag = canonical_display_tag(target_norm)
+    return [{"asset_tag": display_tag, **n} for n in nics]
 
 
 def _parse_racku(racku_str: str):
@@ -1983,10 +1979,13 @@ async def filter_cables(
             )
         ]
 
-    # Filter by physical/logical route type
+    # Filter by physical/logical route type.
+    # Self-referential route cables (SrcTag==DstTag) are excluded separately by
+    # exclude_internal_routes above; do not strip them here when that flag is False.
     is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
+    is_self_route = (candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"]) & is_logical
     if not include_logical_routes:
-        candidate_cables = candidate_cables[~is_logical]
+        candidate_cables = candidate_cables[~is_logical | is_self_route]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
 
@@ -2136,10 +2135,13 @@ async def get_graphviz_dot(
             )
         ]
 
-    # Filter by physical/logical route type
+    # Filter by physical/logical route type.
+    # Self-referential route cables (SrcTag==DstTag) are excluded separately by
+    # exclude_internal_routes above; do not strip them here when that flag is False.
     is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
+    is_self_route = (candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"]) & is_logical
     if not include_logical_routes:
-        candidate_cables = candidate_cables[~is_logical]
+        candidate_cables = candidate_cables[~is_logical | is_self_route]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
 
@@ -2743,7 +2745,7 @@ def get_dashboard_network():
                 "model": meta["model"],
                 "usage": meta["usage"] or str(r.get("Usage", "") or "").strip(),
                 "severity": "warning",
-                "message": "Monitor=Yes but no IP configured",
+                "issue": "Monitor=Yes but no IP configured",
             }
         )
 
@@ -2798,12 +2800,20 @@ def get_dashboard_network():
         else "ok"
     )
 
-    return {
+    # Flat top-level keys for test compatibility
+    ping_results = ping_panel.get("results") if ping_panel["status"] != "unavailable" else None
+    ping_error = ping_panel.get("error") if ping_panel["status"] == "unavailable" else None
+
+    response: Dict[str, Any] = {
         "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
         "status": overall,
         "config_exceptions": config_exceptions,
         "ping": ping_panel,
+        "ping_results": ping_results,
     }
+    if ping_error is not None:
+        response["ping_error"] = ping_error
+    return response
 
 
 # ---------------------------------------------------------------------------
