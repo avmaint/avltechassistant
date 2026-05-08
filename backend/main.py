@@ -1982,9 +1982,11 @@ async def filter_cables(
     # Filter by physical/logical route type.
     # Self-referential route cables (SrcTag==DstTag) are excluded separately by
     # exclude_internal_routes above; do not strip them here when that flag is False.
+    # A protocol filter already scopes results precisely, so include logical routes in that case.
     is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
     is_self_route = (candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"]) & is_logical
-    if not include_logical_routes:
+    effective_include_logical = include_logical_routes or bool(protocol)
+    if not effective_include_logical:
         candidate_cables = candidate_cables[~is_logical | is_self_route]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
@@ -2138,9 +2140,11 @@ async def get_graphviz_dot(
     # Filter by physical/logical route type.
     # Self-referential route cables (SrcTag==DstTag) are excluded separately by
     # exclude_internal_routes above; do not strip them here when that flag is False.
+    # A protocol filter already scopes results precisely, so include logical routes in that case.
     is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
     is_self_route = (candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"]) & is_logical
-    if not include_logical_routes:
+    effective_include_logical = include_logical_routes or bool(protocol)
+    if not effective_include_logical:
         candidate_cables = candidate_cables[~is_logical | is_self_route]
     if not include_physical_routes:
         candidate_cables = candidate_cables[is_logical]
