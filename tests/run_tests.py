@@ -1235,8 +1235,8 @@ def test_dashboard_network_config_exceptions():
     """Dashboard network config_exceptions lists Monitor=Yes assets with no IP."""
     data = request_json("/dashboard/network")
     exceptions = data.get("config_exceptions", [])
-    # Known config exceptions from network.xlsx
-    expected_tags = {"CSWU1", "CUMU-G001", "CUMU-G002", "CUMU-E001"}
+    # Known config exceptions from network.xlsx (Monitor=Yes with no IP)
+    expected_tags = {"CUMU-G002"}
     found_tags = {ex["asset_tag"] for ex in exceptions}
     missing = expected_tags - found_tags
     if missing:
