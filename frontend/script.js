@@ -1452,6 +1452,8 @@ document.addEventListener("DOMContentLoaded", () => {
         params.append("target_tag", displayTag);
         params.append("direction", "both");
         params.append("exclude_internal_routes", "false");
+        params.append("include_logical_routes", "true");
+        params.append("include_physical_routes", "true");
         params.append("include_passthroughs", "true");
 
         let allCables = [];
