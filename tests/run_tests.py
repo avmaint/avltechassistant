@@ -778,11 +778,11 @@ def _route_traversal(node_tag, mode, visible_tags=None):
 
 def test_cable_filter_exclude_internal_routes_false_includes_routes():
     """
-    ZVKU-A001 has a known internal route cable (rt128).
-    With exclude_internal_routes=false it must appear; with true it must not.
+    ZVKU-A001 has internal route cables (SrcTag==DstTag, Type contains 'route').
+    With exclude_internal_routes=false they must appear; with true they must not.
     """
     node_tag = "ZVKU-A001"
-    route_cable_tag = "rt128"
+    node_tag_upper = node_tag.upper()
 
     params_inc = urllib.parse.urlencode({
         "target_tag": node_tag,
@@ -794,10 +794,15 @@ def test_cable_filter_exclude_internal_routes_false_includes_routes():
     if not isinstance(cables_inc, list):
         raise TestFailure("Cable filter (exclude_internal_routes=false) did not return a list")
 
-    inc_tags = {str(c.get("Tag") or "").strip() for c in cables_inc}
-    if route_cable_tag not in inc_tags:
+    route_cables_inc = [
+        c for c in cables_inc
+        if (c.get("SrcTag") or "").strip().upper() == node_tag_upper
+        and (c.get("DstTag") or "").strip().upper() == node_tag_upper
+        and "route" in (c.get("Type") or "").lower()
+    ]
+    if not route_cables_inc:
         raise TestFailure(
-            f"Route cable {route_cable_tag} missing when exclude_internal_routes=false"
+            f"No route cables found for {node_tag} when exclude_internal_routes=false"
         )
 
     params_exc = urllib.parse.urlencode({
@@ -810,10 +815,16 @@ def test_cable_filter_exclude_internal_routes_false_includes_routes():
     if not isinstance(cables_exc, list):
         raise TestFailure("Cable filter (exclude_internal_routes=true) did not return a list")
 
-    exc_tags = {str(c.get("Tag") or "").strip() for c in cables_exc}
-    if route_cable_tag in exc_tags:
+    route_cables_exc = [
+        c for c in cables_exc
+        if (c.get("SrcTag") or "").strip().upper() == node_tag_upper
+        and (c.get("DstTag") or "").strip().upper() == node_tag_upper
+        and "route" in (c.get("Type") or "").lower()
+    ]
+    if route_cables_exc:
+        first_tag = route_cables_exc[0].get("Tag", "?")
         raise TestFailure(
-            f"Route cable {route_cable_tag} still present when exclude_internal_routes=true"
+            f"Route cable {first_tag!r} still present when exclude_internal_routes=true"
         )
 
 

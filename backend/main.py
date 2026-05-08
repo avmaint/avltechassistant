@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
+_IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", "/Users/avuser/uactechdoc/images"))
 
 
 def clean_dataframe_for_json(df: pd.DataFrame) -> pd.DataFrame:
