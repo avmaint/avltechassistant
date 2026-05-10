@@ -2482,16 +2482,22 @@ document.addEventListener("DOMContentLoaded", () => {
         </tr></thead>`;
         const tbody = document.createElement("tbody");
 
+        // Protocols that use TCP ports but are not browser-accessible web services.
+        const NON_WEB_PROTOCOLS = new Set(["pjlink", "osc", "midi"]);
+
         function renderServicesCell(services, ip) {
             if (!services) return "—";
             const parts = services.split(",").map(s => s.trim()).filter(Boolean);
             if (parts.length === 0) return "—";
             return parts.map(part => {
-                const webMatch = part.match(/^web:(\d+)$/i);
-                if (webMatch && ip) {
-                    const port = webMatch[1];
-                    const href = `http://${ip}:${port}`;
-                    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="network-url-link">${escapeHtml(part)}</a>`;
+                const serviceMatch = part.match(/^(.+):(\d+)$/);
+                if (serviceMatch && ip) {
+                    const name = serviceMatch[1].toLowerCase();
+                    const port = serviceMatch[2];
+                    if (!NON_WEB_PROTOCOLS.has(name)) {
+                        const href = `http://${ip}:${port}`;
+                        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="network-url-link">${escapeHtml(part)}</a>`;
+                    }
                 }
                 return escapeHtml(part);
             }).join(", ");
