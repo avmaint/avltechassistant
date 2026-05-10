@@ -2482,6 +2482,21 @@ document.addEventListener("DOMContentLoaded", () => {
         </tr></thead>`;
         const tbody = document.createElement("tbody");
 
+        function renderServicesCell(services, ip) {
+            if (!services) return "—";
+            const parts = services.split(",").map(s => s.trim()).filter(Boolean);
+            if (parts.length === 0) return "—";
+            return parts.map(part => {
+                const webMatch = part.match(/^web:(\d+)$/i);
+                if (webMatch && ip) {
+                    const port = webMatch[1];
+                    const href = `http://${ip}:${port}`;
+                    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="network-url-link">${escapeHtml(part)}</a>`;
+                }
+                return escapeHtml(part);
+            }).join(", ");
+        }
+
         nics.forEach(n => {
             const tr = document.createElement("tr");
             const missingIp = n.monitor && !n.ip;
@@ -2498,6 +2513,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? `<span class="network-monitor-yes">Yes${missingIp ? " ⚠" : ""}</span>`
                 : `<span class="network-monitor-no">No</span>`;
 
+            // Services cell — web:<port> entries become clickable links
+            const servicesCell = renderServicesCell(n.services, n.ip);
+
             tr.innerHTML = `
                 <td>${escapeHtml(n.nic  || "—")}</td>
                 <td class="network-ip">${escapeHtml(n.ip   || "—")}</td>
@@ -2506,7 +2524,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td>${monCell}</td>
                 <td>${escapeHtml(n.static_reserved || "—")}</td>
                 <td>${escapeHtml(n.usage || "—")}</td>
-                <td class="network-services">${escapeHtml(n.services || "—")}</td>
+                <td class="network-services">${servicesCell}</td>
                 <td>${escapeHtml(n.notes || "—")}</td>
             `;
             tbody.appendChild(tr);
