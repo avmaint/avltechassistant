@@ -2477,8 +2477,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const table = document.createElement("table");
         table.className = "network-table";
         table.innerHTML = `<thead><tr>
-            <th>NIC</th><th>IP</th><th>MAC</th><th>URL</th>
-            <th>Monitor</th><th>Assignment</th><th>Usage</th><th>Services</th><th>Notes</th>
+            <th>NIC</th><th>IP</th><th>MAC</th>
+            <th>Monitor</th><th>Type</th><th>Usage</th><th>Services</th><th>Notes</th>
         </tr></thead>`;
         const tbody = document.createElement("tbody");
 
@@ -2508,12 +2508,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const missingIp = n.monitor && !n.ip;
             if (missingIp) tr.className = "network-row-warning";
 
-            // URL cell — make clickable if present
-            let urlCell = "";
-            if (n.url) {
-                urlCell = `<a href="${escapeHtml(n.url)}" target="_blank" rel="noopener" class="network-url-link">${escapeHtml(n.url)}</a>`;
-            }
-
             // Monitor cell
             const monCell = n.monitor
                 ? `<span class="network-monitor-yes">Yes${missingIp ? " ⚠" : ""}</span>`
@@ -2526,7 +2520,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td>${escapeHtml(n.nic  || "—")}</td>
                 <td class="network-ip">${escapeHtml(n.ip   || "—")}</td>
                 <td class="network-mac">${escapeHtml(n.mac  || "—")}</td>
-                <td>${urlCell || "—"}</td>
                 <td>${monCell}</td>
                 <td>${escapeHtml(n.static_reserved || "—")}</td>
                 <td>${escapeHtml(n.usage || "—")}</td>
