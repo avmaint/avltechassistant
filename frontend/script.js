@@ -2500,7 +2500,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
                 return escapeHtml(part);
-            }).join(", ");
+            }).join("<br>");
         }
 
         nics.forEach(n => {
