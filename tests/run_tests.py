@@ -1403,15 +1403,16 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
 def main():
     print(f"Running {len(TESTS)} tests against {API_BASE}")
     passed = 0
-    for name, func in TESTS:
+    for i, (name, func) in enumerate(TESTS, start=1):
+        tid = f"T{i:03d}"
         try:
             func()
         except TestFailure as exc:
-            print(f"[FAIL] {name}: {exc}")
+            print(f"[FAIL] {tid} {name}: {exc}")
         except Exception as exc:
-            print(f"[ERROR] {name}: {exc}", file=sys.stderr)
+            print(f"[ERROR] {tid} {name}: {exc}", file=sys.stderr)
         else:
-            print(f"[PASS] {name}")
+            print(f"[PASS] {tid} {name}")
             passed += 1
     total = len(TESTS)
     print(f"Completed {total} tests: {passed} passed, {total - passed} failed")
