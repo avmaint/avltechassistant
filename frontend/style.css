@@ -1369,3 +1369,13 @@ details[open] .diagram-options-summary::before {
     .network-table td:nth-child(n+4) { display: none; }
 }
 
+.field-search-link {
+    color: #0056b3;
+    text-decoration: none;
+    cursor: pointer;
+}
+.field-search-link:hover {
+    text-decoration: underline;
+    color: #003d80;
+}
+

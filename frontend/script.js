@@ -53,6 +53,7 @@ let edgeFieldDefaults = [...DEFAULT_EDGE_FIELDS];
 let crosspointHeaderDefaults = [...DEFAULT_CROSSPOINT_FIELDS];
 let assetColumnDefaults = [...ASSET_TABLE_DEFAULT_COLUMNS];
 let assetTableData = [];
+let _assetSearchExtraParams = {};
 
 // Store sort state for tables
 const tableSortStates = {
@@ -155,6 +156,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (modelSearch.value) params.append("model", modelSearch.value);
         const inServiceValue = inServiceOnlyCheckbox ? inServiceOnlyCheckbox.checked : true;
         params.append("in_service_only", inServiceValue.toString());
+        for (const [key, val] of Object.entries(_assetSearchExtraParams)) {
+            if (val !== undefined && val !== null && val !== "") params.append(key, val);
+        }
+        _assetSearchExtraParams = {};
 
         showLoadingSpinner(assetTableContainer, "Searching assets…");
         document.querySelector('.tab-button[data-tab="assetResults"]').click();
@@ -184,6 +189,21 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     });
+
+    function navigateToAssetSearch(params) {
+        assetTagSearch.value = params.asset_tag || "";
+        manufacturerSearch.value = params.manufacturer || "";
+        modelSearch.value = params.model || "";
+        if (inServiceOnlyCheckbox && "in_service_only" in params) {
+            inServiceOnlyCheckbox.checked = params.in_service_only;
+        }
+        const knownInputs = new Set(["asset_tag", "manufacturer", "model", "in_service_only"]);
+        _assetSearchExtraParams = {};
+        for (const [key, val] of Object.entries(params)) {
+            if (!knownInputs.has(key)) _assetSearchExtraParams[key] = val;
+        }
+        performAssetSearch();
+    }
 
     // --- Cable and Diagram Viewer Logic ---
     const targetTagFilter = document.getElementById("targetTagFilter");
@@ -2357,16 +2377,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const content = document.createElement("div");
         content.className = "asset-properties-content";
 
-        // Helper function to create a table with headers and values
-        function createPropertyTable(fields) {
-            // Filter to only fields that have values
+        // Helper function to create a table with headers and values.
+        // clickableFieldsMap: { fieldName: searchParamsObj } — fields that navigate to asset search on click.
+        function createPropertyTable(fields, clickableFieldsMap = {}) {
             const fieldsWithValues = fields.filter(field => hasValue(field));
             if (fieldsWithValues.length === 0) return null;
 
             const table = document.createElement("table");
             table.className = "property-table";
 
-            // Create header row
             const thead = document.createElement("thead");
             const headerRow = document.createElement("tr");
             fieldsWithValues.forEach(field => {
@@ -2377,22 +2396,37 @@ document.addEventListener("DOMContentLoaded", () => {
             thead.appendChild(headerRow);
             table.appendChild(thead);
 
-            // Create value row
             const tbody = document.createElement("tbody");
             const valueRow = document.createElement("tr");
             fieldsWithValues.forEach(field => {
                 const td = document.createElement("td");
                 const raw = getValue(field);
+                let displayText;
                 if (currencyFields.has(field)) {
                     const num = parseFloat(raw);
-                    td.textContent = isNaN(num) ? raw : `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    displayText = isNaN(num) ? raw : `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 } else if (dateOnlyFields.has(field)) {
-                    td.textContent = raw ? String(raw).split('T')[0].split(' ')[0] : raw;
+                    displayText = raw ? String(raw).split('T')[0].split(' ')[0] : raw;
                 } else if (integerFields.has(field)) {
                     const num = parseFloat(raw);
-                    td.textContent = isNaN(num) ? raw : String(Math.round(num));
+                    displayText = isNaN(num) ? raw : String(Math.round(num));
                 } else {
-                    td.textContent = raw;
+                    displayText = raw;
+                }
+
+                if (clickableFieldsMap[field] && raw) {
+                    const link = document.createElement("a");
+                    link.href = "#";
+                    link.className = "field-search-link";
+                    link.textContent = displayText;
+                    const searchParams = clickableFieldsMap[field];
+                    link.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        navigateToAssetSearch(searchParams);
+                    });
+                    td.appendChild(link);
+                } else {
+                    td.textContent = displayText;
                 }
                 valueRow.appendChild(td);
             });
@@ -2412,7 +2446,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (row1Table) basicSection.appendChild(row1Table);
 
         // Row 2: Manufacturer, Model, SN
-        const row2Table = createPropertyTable(["Manufacturer", "Model", "SN"]);
+        const row2ClickMap = {};
+        if (getValue("Manufacturer")) row2ClickMap["Manufacturer"] = { manufacturer: getValue("Manufacturer"), in_service_only: false };
+        if (getValue("Model")) row2ClickMap["Model"] = { model: getValue("Model"), in_service_only: false };
+        const row2Table = createPropertyTable(["Manufacturer", "Model", "SN"], row2ClickMap);
         if (row2Table) basicSection.appendChild(row2Table);
 
         // Row 3: AcqYear, EolYear, Usage, Desc
@@ -2428,7 +2465,16 @@ document.addEventListener("DOMContentLoaded", () => {
             locationSection.className = "property-section";
             locationSection.innerHTML = "<h4>Location</h4>";
 
-            const locationTable = createPropertyTable(locationFields);
+            const _b = getValue("Building");
+            const _f = getValue("Floor");
+            const _r = getValue("Room");
+            const _s = getValue("Sector");
+            const locationClickMap = {};
+            if (_b) locationClickMap["Building"] = { building: _b, in_service_only: false };
+            if (_f) locationClickMap["Floor"] = { building: _b, floor: _f, in_service_only: false };
+            if (_r) locationClickMap["Room"] = { building: _b, floor: _f, room: _r, in_service_only: false };
+            if (_s) locationClickMap["Sector"] = { building: _b, floor: _f, room: _r, sector: _s, in_service_only: false };
+            const locationTable = createPropertyTable(locationFields, locationClickMap);
             if (locationTable) locationSection.appendChild(locationTable);
 
             content.appendChild(locationSection);
@@ -2444,7 +2490,10 @@ document.addEventListener("DOMContentLoaded", () => {
             financialSection.className = "property-section";
             financialSection.innerHTML = "<h4>Financial</h4>";
 
-            const financialTable = createPropertyTable(allFinancialFields);
+            const financialClickMap = {};
+            if (getValue("PurcFrom")) financialClickMap["PurcFrom"] = { purc_from: getValue("PurcFrom"), in_service_only: false };
+            if (getValue("Invoice")) financialClickMap["Invoice"] = { invoice: getValue("Invoice"), in_service_only: false };
+            const financialTable = createPropertyTable(allFinancialFields, financialClickMap);
             if (financialTable) financialSection.appendChild(financialTable);
 
             content.appendChild(financialSection);

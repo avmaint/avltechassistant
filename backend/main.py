@@ -1825,17 +1825,21 @@ async def search_assets(
     asset_tag: Optional[str] = None,
     manufacturer: Optional[str] = None,
     model: Optional[str] = None,
+    building: Optional[str] = None,
+    floor: Optional[str] = None,
+    room: Optional[str] = None,
+    sector: Optional[str] = None,
+    purc_from: Optional[str] = None,
+    invoice: Optional[str] = None,
     in_service_only: bool = True,
 ):
     """
-    Search for assets by asset tag, manufacturer, or model.
+    Search for assets by asset tag, manufacturer, model, location, or financial fields.
     Optionally filter to only in-service items (default: True).
     """
     filtered_assets = df_assets.copy()
 
-    # Filter by InService status if requested
     if in_service_only:
-        # Only include assets where InService is explicitly "Y" (case-insensitive)
         filtered_assets = filtered_assets[
             filtered_assets["InService"].fillna("").astype(str).str.strip().str.upper()
             == "Y"
@@ -1847,13 +1851,35 @@ async def search_assets(
         ]
     if manufacturer:
         filtered_assets = filtered_assets[
-            filtered_assets["Manufacturer"].str.contains(
-                manufacturer, case=False, na=False
-            )
+            filtered_assets["Manufacturer"].str.contains(manufacturer, case=False, na=False)
         ]
     if model:
         filtered_assets = filtered_assets[
             filtered_assets["Model"].str.contains(model, case=False, na=False)
+        ]
+    if building and "Building" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["Building"].fillna("").astype(str).str.contains(building, case=False, na=False)
+        ]
+    if floor and "Floor" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["Floor"].fillna("").astype(str).str.contains(floor, case=False, na=False)
+        ]
+    if room and "Room" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["Room"].fillna("").astype(str).str.contains(room, case=False, na=False)
+        ]
+    if sector and "Sector" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["Sector"].fillna("").astype(str).str.contains(sector, case=False, na=False)
+        ]
+    if purc_from and "PurcFrom" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["PurcFrom"].fillna("").astype(str).str.contains(purc_from, case=False, na=False)
+        ]
+    if invoice and "Invoice" in filtered_assets.columns:
+        filtered_assets = filtered_assets[
+            filtered_assets["Invoice"].fillna("").astype(str).str.contains(invoice, case=False, na=False)
         ]
 
     filtered_assets = filtered_assets.drop(columns=["AssetTagNorm"], errors="ignore")
