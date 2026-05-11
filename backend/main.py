@@ -859,6 +859,18 @@ async def read_root():
     return {"message": "Welcome to the UAC Tech Documentation API"}
 
 
+@app.get("/health")
+async def health():
+    checks = {"status": "ok", "checks": {}}
+    try:
+        load_assets_data()
+        checks["checks"]["assets_data"] = "ok"
+    except Exception as e:
+        checks["checks"]["assets_data"] = f"error: {e}"
+        checks["status"] = "degraded"
+    return checks
+
+
 _reload_history: list = []
 _MAX_RELOAD_HISTORY = 50
 

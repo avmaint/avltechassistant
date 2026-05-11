@@ -56,6 +56,18 @@ def test_backend_root():
         raise TestFailure("Root endpoint missing 'message'")
 
 
+def test_health_endpoint():
+    data = request_json("/health")
+    if "status" not in data:
+        raise TestFailure("Health endpoint missing 'status' key")
+    if "checks" not in data:
+        raise TestFailure("Health endpoint missing 'checks' key")
+    if data["status"] not in ("ok", "degraded"):
+        raise TestFailure(f"Unexpected health status: {data['status']}")
+    if data["status"] != "ok":
+        raise TestFailure(f"Health check degraded: {data['checks']}")
+
+
 def test_asset_search_returns_usage():
     target_tag = "ZVKU-A001"
     data = request_json(f"/assets/search?asset_tag={urllib.parse.quote(target_tag)}")
@@ -1314,6 +1326,7 @@ def test_network_targets_no_missing_ip_rows():
 
 TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("GET /", test_backend_root),
+    ("GET /health returns ok status", test_health_endpoint),
     ("Asset search returns usage", test_asset_search_returns_usage),
     ("Asset search in-service filter", test_asset_search_in_service_filter),
     ("Cable filter returns rows", test_cable_filter_has_rows),
