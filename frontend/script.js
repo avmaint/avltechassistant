@@ -2793,7 +2793,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Devices
         devices.forEach(dev => {
-            const yTop = SVG_H - (dev.u_start + dev.u_height - 1) * U_PX - U_PX;
+            const yTop = SVG_H - (dev.u_start + dev.u_height - 1) * U_PX;
             const devH = dev.u_height * U_PX;
             const xLeft  = LABEL_W + Math.round(dev.x_start * RACK_W) + 1;
             const devW   = Math.round((dev.x_end - dev.x_start) * RACK_W) - 2;
