@@ -3004,3 +3004,46 @@ def get_manuals(asset_tag: str):
         raise HTTPException(status_code=exc.code, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Manuals service unreachable: {exc}")
+
+
+# ── Glossary ──────────────────────────────────────────────────────────────────
+
+def load_glossary_data() -> pd.DataFrame:
+    """Loads glossary data from glossary.xlsx."""
+    try:
+        df = pd.read_excel("../data/glossary.xlsx", sheet_name="glossary")
+        df.columns = df.columns.str.strip()
+        df = df.astype(object)
+        for col in ("Topic", "Term", "SeeAlso", "Definition"):
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+                df.loc[df[col].str.lower().isin(("nan", "none")), col] = ""
+        df = df[df["Term"] != ""].copy()
+        return df
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading glossary data: {e}")
+
+
+@app.get("/glossary/topics")
+async def get_glossary_topics():
+    """Returns all unique glossary topics, sorted case-insensitively."""
+    df = load_glossary_data()
+    topics = sorted((t for t in df["Topic"].unique() if t), key=str.casefold)
+    return {"topics": topics}
+
+
+@app.get("/glossary")
+async def get_glossary(topic: Optional[str] = None):
+    """Returns glossary entries, optionally filtered by topic."""
+    df = load_glossary_data()
+    if topic:
+        df = df[df["Topic"].str.casefold() == topic.casefold()]
+    return [
+        {
+            "topic": row["Topic"],
+            "term": row["Term"],
+            "see_also": row["SeeAlso"],
+            "definition": row["Definition"],
+        }
+        for _, row in df.iterrows()
+    ]

@@ -128,6 +128,14 @@ This document outlines the requirements for the interactive web application.
     -   **Sector**: Optional integer 1–16 representing position within a room divided into a 4×4 grid, numbered left-to-right then top-to-bottom (1 = NW corner, 4 = NE corner, 13 = SW corner, 16 = SE corner). Displayed alongside Building/Floor/Room throughout the application wherever location data appears.
 -   `uac_cables.xlsx`: Contains cable connectivity details.
 -   `uac_knowledgebase.xlsx`: Contains knowledge base issues linked to assets.
+-   `glossary.xlsx`: AV terminology definitions. Sheet `glossary`, columns: Topic, Term, SeeAlso, Definition.
+
+## 4a. Glossary API
+
+-   **`GET /glossary`**: Returns all glossary entries as a JSON array. Each entry contains `topic`, `term`, `see_also`, and `definition` string fields. All string values have leading/trailing whitespace stripped.
+    -   Optional query parameter `topic` (string): when supplied, returns only entries whose topic matches case-insensitively.
+    -   An unknown `topic` value returns an empty list (not an error).
+-   **`GET /glossary/topics`**: Returns `{ "topics": [...] }` — all unique, non-blank topic values sorted case-insensitively.
 
 ## 5. Deployment
 

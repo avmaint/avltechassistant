@@ -1324,6 +1324,86 @@ def test_network_targets_no_missing_ip_rows():
             )
 
 
+def test_glossary_returns_list():
+    """GET /glossary returns a non-empty list of entries."""
+    data = request_json("/glossary")
+    if not isinstance(data, list):
+        raise TestFailure(f"Expected list, got {type(data).__name__}")
+    if len(data) == 0:
+        raise TestFailure("Expected at least one glossary entry")
+
+
+def test_glossary_entries_have_required_fields():
+    """Every glossary entry has topic, term, definition, and see_also fields."""
+    data = request_json("/glossary")
+    for entry in data:
+        for field in ("topic", "term", "definition", "see_also"):
+            if field not in entry:
+                raise TestFailure(f"Entry missing field '{field}': {entry}")
+
+
+def test_glossary_topic_filter():
+    """GET /glossary?topic=Audio returns only Audio entries."""
+    data = request_json("/glossary?topic=Audio")
+    if not data:
+        raise TestFailure("Expected at least one Audio glossary entry")
+    for entry in data:
+        if entry.get("topic", "").lower() != "audio":
+            raise TestFailure(
+                f"topic filter returned non-Audio entry: topic={entry.get('topic')!r}"
+            )
+
+
+def test_glossary_topic_filter_unknown_returns_empty():
+    """GET /glossary?topic=<nonexistent> returns an empty list, not an error."""
+    data = request_json("/glossary?topic=ThisTopicDoesNotExist")
+    if not isinstance(data, list):
+        raise TestFailure(f"Expected list for unknown topic, got {type(data).__name__}")
+    if len(data) != 0:
+        raise TestFailure(f"Expected empty list for unknown topic, got {len(data)} entries")
+
+
+def test_glossary_topics_endpoint():
+    """GET /glossary/topics returns a non-empty, sorted, unique list."""
+    data = request_json("/glossary/topics")
+    if "topics" not in data:
+        raise TestFailure("Missing 'topics' key in /glossary/topics response")
+    topics = data["topics"]
+    if not topics:
+        raise TestFailure("Expected at least one topic in /glossary/topics")
+    if topics != sorted(topics, key=str.casefold):
+        raise TestFailure(f"Topics are not sorted case-insensitively: {topics}")
+    if len(topics) != len(set(topics)):
+        raise TestFailure(f"Topics list contains duplicates: {topics}")
+
+
+def test_glossary_topics_no_blank_entries():
+    """GET /glossary/topics contains no blank or whitespace-only entries."""
+    data = request_json("/glossary/topics")
+    for t in data.get("topics", []):
+        if not t.strip():
+            raise TestFailure(f"Topics list contains blank entry: {t!r}")
+
+
+def test_glossary_whitespace_stripped():
+    """All glossary entries have whitespace stripped from topic and term."""
+    data = request_json("/glossary")
+    for entry in data:
+        topic = entry.get("topic", "")
+        term = entry.get("term", "")
+        if topic != topic.strip():
+            raise TestFailure(f"topic has surrounding whitespace: {topic!r}")
+        if term != term.strip():
+            raise TestFailure(f"term has surrounding whitespace: {term!r}")
+
+
+def test_glossary_seealso_present_when_expected():
+    """At least one glossary entry has a non-empty see_also value."""
+    data = request_json("/glossary")
+    if not any(entry.get("see_also") for entry in data):
+        raise TestFailure("Expected at least one entry with a non-empty see_also")
+
+
 TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("GET /", test_backend_root),
     ("GET /health returns ok status", test_health_endpoint),
@@ -1397,6 +1477,14 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("/api/network/targets: returns at least one monitored node", test_network_targets_non_empty),
     ("/api/network/targets: every entry has asset_tag, ip, related_issue_ids", test_network_targets_required_fields),
     ("/api/network/targets: excludes Monitor=Yes rows with no IP", test_network_targets_no_missing_ip_rows),
+    ("Glossary: returns non-empty list", test_glossary_returns_list),
+    ("Glossary: entries have required fields", test_glossary_entries_have_required_fields),
+    ("Glossary: topic filter returns matching entries only", test_glossary_topic_filter),
+    ("Glossary: unknown topic returns empty list", test_glossary_topic_filter_unknown_returns_empty),
+    ("Glossary: /glossary/topics sorted and unique", test_glossary_topics_endpoint),
+    ("Glossary: /glossary/topics has no blank entries", test_glossary_topics_no_blank_entries),
+    ("Glossary: whitespace stripped from topic and term", test_glossary_whitespace_stripped),
+    ("Glossary: at least one see_also value present", test_glossary_seealso_present_when_expected),
 ]
 
 
