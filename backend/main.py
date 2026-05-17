@@ -3014,7 +3014,7 @@ def load_glossary_data() -> pd.DataFrame:
         df = pd.read_excel("../data/glossary.xlsx", sheet_name="glossary")
         df.columns = df.columns.str.strip()
         df = df.astype(object)
-        for col in ("Topic", "Term", "SeeAlso", "Definition"):
+        for col in ("Topic", "Term", "Sense", "SeeAlso", "Definition"):
             if col in df.columns:
                 df[col] = df[col].fillna("").astype(str).str.strip()
                 df.loc[df[col].str.lower().isin(("nan", "none")), col] = ""
@@ -3042,6 +3042,7 @@ async def get_glossary(topic: Optional[str] = None):
         {
             "topic": row["Topic"],
             "term": row["Term"],
+            "sense": row.get("Sense", ""),
             "see_also": row["SeeAlso"],
             "definition": row["Definition"],
         }
