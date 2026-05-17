@@ -13,6 +13,16 @@ LOG_FILE_BACK="$APP_DIR/backend.log"
 FRONTEND_PORT=8080
 BACKEND_PORT=9000
 
+# Deployment target for image sync.
+# NOTE: sync-images lives here because avltechassistant currently owns the
+# /location/floorplan endpoint and the IMAGES_DIR path. Once floorplan serving
+# moves to avl_data (per system-architecture.md), this command should migrate
+# to avl_data/db.sh alongside the rest of the data platform tooling.
+DEPLOY_USER="avuser"
+DEPLOY_HOST="uacts-g001"
+IMAGES_SRC="$HOME/Documents/UACTech/SystemDocumentation/github/uactechdoc/images/"
+IMAGES_DST="/Users/$DEPLOY_USER/uactechdoc/images/"
+
 install_deps() {
     echo "Creating virtual environment..."
     python3 -m venv "$VENV"
@@ -85,6 +95,14 @@ start_services() {
     echo "Services running. Frontend: http://0.0.0.0:$FRONTEND_PORT  Backend: http://0.0.0.0:$BACKEND_PORT"
 }
 
+sync_images() {
+    echo "Syncing floorplan images to $DEPLOY_USER@$DEPLOY_HOST ..."
+    rsync -avz --delete \
+        "$IMAGES_SRC" \
+        "$DEPLOY_USER@$DEPLOY_HOST:$IMAGES_DST"
+    echo "Image sync complete."
+}
+
 run_tests() {
     if [ ! -x "$VENV/bin/python" ]; then
         echo "Python venv not found. Run './run.sh install' first." >&2
@@ -114,8 +132,11 @@ case "$CMD" in
     test)
         run_tests
         ;;
+    sync-images)
+        sync_images
+        ;;
     *)
-        echo "Usage: ./run.sh [install|deploy|start|stop|restart|test]" >&2
+        echo "Usage: ./run.sh [install|deploy|start|stop|restart|test|sync-images]" >&2
         exit 1
         ;;
 esac

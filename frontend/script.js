@@ -2880,6 +2880,32 @@ document.addEventListener("DOMContentLoaded", () => {
         renderTable(issues, container, "knowledgeBaseIssuesTable"); // Reuse renderTable
     }
 
+    // Renders a KB text field with full markdown support, external links opening in a
+    // new tab, and [[IssueID]] wiki-style cross-references rendered as clickable spans.
+    function renderMarkdown(text) {
+        if (!text) return '';
+        if (typeof marked === 'undefined' || !marked.parse) {
+            return escapeHtml(text);
+        }
+
+        // Pre-process [[IssueID]] cross-references before markdown parsing.
+        // Encode them as a placeholder the markdown parser will pass through as-is.
+        const processed = text.replace(/\[\[([^\]]+)\]\]/g, (_, id) => {
+            const safeId = id.replace(/"/g, '&quot;');
+            return `<span class="kb-crossref" data-id="${safeId}">${escapeHtml(id)}</span>`;
+        });
+
+        // Custom renderer: open all links in a new tab.
+        const renderer = new marked.Renderer();
+        const origLink = renderer.link.bind(renderer);
+        renderer.link = (href, title, text) => {
+            const html = origLink(href, title, text);
+            return html.replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ');
+        };
+
+        return marked.parse(processed, { renderer });
+    }
+
     function renderKBResults(issues) {
         if (!kbResultsContainer) return;
 
@@ -2956,12 +2982,18 @@ document.addEventListener("DOMContentLoaded", () => {
                             valueSpan.appendChild(tagLink);
                         });
                     } else {
-                        // Render markdown if marked library is available
-                        if (typeof marked !== 'undefined' && marked.parse) {
-                            valueSpan.innerHTML = marked.parse(field.value);
-                        } else {
-                            valueSpan.textContent = field.value;
-                        }
+                        valueSpan.innerHTML = renderMarkdown(field.value);
+                        valueSpan.querySelectorAll('.kb-crossref').forEach(span => {
+                            span.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const id = span.dataset.id;
+                                if (kbIssueIdSearch) kbIssueIdSearch.value = id;
+                                if (kbTagSearch) kbTagSearch.value = '';
+                                if (kbFreeformSearch) kbFreeformSearch.value = '';
+                                if (kbActiveIssueTags) Array.from(kbActiveIssueTags.options).forEach(o => { o.selected = false; });
+                                await performKBSearch();
+                            });
+                        });
                     }
 
                     fieldDiv.appendChild(valueSpan);
