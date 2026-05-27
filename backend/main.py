@@ -39,6 +39,18 @@ _IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", "/Users/avuser/uactechdoc/images
 _AVL_DATA_URL = os.environ.get("AVL_DATA_URL", "http://localhost:8002")
 
 
+def _avl_data_get(path: str):
+    """Fetch JSON from the avl_data API. Raises HTTPException on failure."""
+    url = f"{_AVL_DATA_URL}{path}"
+    try:
+        with _urllib_request.urlopen(url, timeout=10) as resp:
+            return _json.loads(resp.read().decode())
+    except _urllib_error.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"avl_data API error: {exc.code} {path}")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"avl_data API unavailable: {exc}")
+
+
 def clean_dataframe_for_json(df: pd.DataFrame) -> pd.DataFrame:
     """
     Cleans a DataFrame by converting all values to strings or empty strings for JSON serialization.
@@ -86,56 +98,84 @@ def normalize_tag_value(value: Optional[str]) -> str:
     return s.upper()
 
 
+_ASSETS_DB_TO_EXCEL = {
+    "asset_tag": "AssetTag", "category": "Category", "qty": "Qty",
+    "unit_value": "UnitValue", "acq_value": "AcqValue", "manufacturer": "Manufacturer",
+    "model": "Model", "building": "Building", "floor": "Floor", "room": "Room",
+    "sector": "Sector", "location": "Location", "rack": "Rack", "rack_u": "RackU",
+    "rack_height": "RackHeight", "asset_type": "Type", "description": "Desc",
+    "usage": "Usage", "serial_number": "SN", "in_service": "InService",
+    "purc_date": "PurcDate", "purc_from": "PurcFrom", "invoice": "Invoice",
+    "comments": "Comments", "acq_year": "AcqYear", "eol_year": "EolYear",
+    "disposition": "Disposition", "disposed_year": "DisposedYear",
+    "disposed_value": "DisposedValue", "disposed_comment": "DisposedComment",
+    "disposition_destination": "DispositionDestination", "last_audit_date": "LastAuditDate",
+}
+
+_CABLES_DB_TO_EXCEL = {
+    "cable_tag": "Tag", "src_tag": "SrcTag", "src_port": "SrcPort",
+    "dst_tag": "DstTag", "dst_port": "DstPort", "cable_type": "Type",
+    "protocol": "Protocol", "length": "Length", "labelled": "Labelled?",
+    "usage": "Usage", "notes": "Notes", "invoice": "Invoice", "pathway": "Pathway",
+}
+
+_NETWORK_DB_TO_EXCEL = {
+    "asset_tag": "AssetTag", "nic": "NIC", "ip_address": "IP",
+    "mac_address": "MAC", "address_type": "Static-Reserved", "url": "URL",
+    "usage": "Usage", "services": "Services", "monitor": "Monitor",
+    "related_issue_id": "RelatedIssueId", "notes": "Notes",
+}
+
+_KB_DB_TO_EXCEL = {
+    "issue_id": "IssueID", "category": "Category", "subcategory": "Subcategory",
+    "title": "Title", "symptom": "Symptom", "trigger_conditions": "TriggerConditions",
+    "likely_cause": "LikelyCause", "recovery_steps": "RecoverySteps",
+    "applies_to_asset_type": "AppliesToAssetType", "applies_to_asset_tag": "AppliesToAssetTag",
+    "tags": "Tags", "see_also": "SeeAlso", "sort_order": "SortOrder",
+    "active": "Active", "notes": "Notes",
+}
+
+
 def load_assets_data():
-    """Loads asset data from uac_assets.xlsx."""
-    try:
-        df_assets = pd.read_excel("../data/assets.xlsx", sheet_name="assets")
-        # Filter out rows where AssetTag is NaN, as these seem to be summary/non-asset rows
-        df_assets = df_assets.dropna(subset=["AssetTag"])
-        # Force all columns to object dtype to prevent NaN re-introduction issues
-        df_assets = df_assets.astype(object)
-        df_assets["AssetTag"] = df_assets["AssetTag"].astype(str).str.strip()
-        df_assets["AssetTagNorm"] = df_assets["AssetTag"].str.upper()
-        return df_assets
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading asset data: {e}")
+    rows = _avl_data_get("/assets?limit=5000")
+    if not rows:
+        return pd.DataFrame(columns=list(_ASSETS_DB_TO_EXCEL.values()) + ["AssetTagNorm"])
+    df = pd.DataFrame(rows).rename(columns=_ASSETS_DB_TO_EXCEL)
+    df = df.astype(object)
+    df["AssetTag"] = df["AssetTag"].fillna("").astype(str).str.strip()
+    df["AssetTagNorm"] = df["AssetTag"].str.upper()
+    return df
 
 
 def load_cables_data():
-    """Loads cable data from uac_cables.xlsx."""
-    try:
-        df_cables = pd.read_excel("../data/cables.xlsx", sheet_name="Cables")
-        # Force all columns to object dtype to prevent NaN re-introduction issues
-        df_cables = df_cables.astype(object)
-        df_cables["Tag"] = df_cables["Tag"].astype(str).str.strip()
-        df_cables["SrcTag"] = df_cables["SrcTag"].astype(str).str.strip()
-        df_cables["DstTag"] = df_cables["DstTag"].astype(str).str.strip()
-        df_cables["TagNorm"] = df_cables["Tag"].str.upper()
-        df_cables["SrcTagNorm"] = df_cables["SrcTag"].str.upper()
-        df_cables["DstTagNorm"] = df_cables["DstTag"].str.upper()
-        return df_cables
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading cable data: {e}")
+    rows = _avl_data_get("/cables?limit=5000")
+    if not rows:
+        return pd.DataFrame(columns=list(_CABLES_DB_TO_EXCEL.values()) + ["TagNorm", "SrcTagNorm", "DstTagNorm"])
+    df = pd.DataFrame(rows).rename(columns=_CABLES_DB_TO_EXCEL)
+    df = df.astype(object)
+    df["Tag"] = df["Tag"].fillna("").astype(str).str.strip()
+    df["SrcTag"] = df["SrcTag"].fillna("").astype(str).str.strip()
+    df["DstTag"] = df["DstTag"].fillna("").astype(str).str.strip()
+    df["TagNorm"] = df["Tag"].str.upper()
+    df["SrcTagNorm"] = df["SrcTag"].str.upper()
+    df["DstTagNorm"] = df["DstTag"].str.upper()
+    return df
 
 
 def load_network_data() -> pd.DataFrame:
-    """Loads network NIC data from network.xlsx."""
-    try:
-        df = pd.read_excel("../data/network.xlsx")
-        df = df.astype(object)
-        df["AssetTag"] = df["AssetTag"].astype(str).str.strip()
-        df["AssetTagNorm"] = df["AssetTag"].str.upper()
-        # Normalise Monitor column to "Yes" / "No" / ""
-        df["Monitor"] = df["Monitor"].fillna("").astype(str).str.strip()
-        # Normalise IP — treat "tbd", "nan", "none" as empty
-        df["IP"] = df["IP"].fillna("").astype(str).str.strip()
-        df.loc[df["IP"].str.lower().isin(("nan", "none", "tbd", "na")), "IP"] = ""
-        # NIC column — blank for single-NIC rows
-        df["NIC"] = df["NIC"].fillna("").astype(str).str.strip()
-        df.loc[df["NIC"].str.lower().isin(("nan", "none")), "NIC"] = ""
-        return df
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading network data: {e}")
+    rows = _avl_data_get("/network?limit=5000")
+    if not rows:
+        return pd.DataFrame(columns=list(_NETWORK_DB_TO_EXCEL.values()) + ["AssetTagNorm"])
+    df = pd.DataFrame(rows).rename(columns=_NETWORK_DB_TO_EXCEL)
+    df = df.astype(object)
+    df["AssetTag"] = df["AssetTag"].fillna("").astype(str).str.strip()
+    df["AssetTagNorm"] = df["AssetTag"].str.upper()
+    df["Monitor"] = df["Monitor"].map({True: "Yes", False: "No"}).fillna("")
+    df["IP"] = df["IP"].fillna("").astype(str).str.strip()
+    df.loc[df["IP"].str.lower().isin(("nan", "none", "tbd", "na")), "IP"] = ""
+    df["NIC"] = df["NIC"].fillna("").astype(str).str.strip()
+    df.loc[df["NIC"].str.lower().isin(("nan", "none")), "NIC"] = ""
+    return df
 
 
 def _parse_issue_ids(raw) -> List[str]:
@@ -178,23 +218,17 @@ def _network_rows_for_tag(df_net: pd.DataFrame, asset_tag: str) -> List[dict]:
 
 
 def load_knowledgebase_data():
-    """Loads knowledge base data from knowledgebase.xlsx."""
-    try:
-        df_kb = pd.read_excel("../data/knowledgebase.xlsx", sheet_name="Issues")
-        df_kb.columns = df_kb.columns.str.strip()
-        df_kb["AppliesToAssetTag"] = (
-            df_kb["AppliesToAssetTag"].fillna("").astype(str).str.strip()
-        )
-        df_kb["AppliesToAssetTagNorm"] = df_kb["AppliesToAssetTag"].str.upper()
-        if "SeeAlso" not in df_kb.columns:
-            df_kb["SeeAlso"] = ""
-        df_kb["SeeAlso"] = df_kb["SeeAlso"].fillna("").astype(str).str.strip()
-        df_kb = df_kb.dropna(subset=["IssueID"])
-        return df_kb
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error loading knowledge base data: {e}"
-        )
+    rows = _avl_data_get("/knowledgebase?limit=5000")
+    if not rows:
+        return pd.DataFrame(columns=list(_KB_DB_TO_EXCEL.values()) + ["AppliesToAssetTagNorm"])
+    df = pd.DataFrame(rows).rename(columns=_KB_DB_TO_EXCEL)
+    df = df.astype(object)
+    df["AppliesToAssetTag"] = df["AppliesToAssetTag"].fillna("").astype(str).str.strip()
+    df["AppliesToAssetTagNorm"] = df["AppliesToAssetTag"].str.upper()
+    df["SeeAlso"] = df["SeeAlso"].fillna("").astype(str).str.strip()
+    df["Active"] = df["Active"].map({True: "Yes", False: "No"}).fillna("")
+    df = df.dropna(subset=["IssueID"])
+    return df
 
 
 def build_kb_seealso_map(df_kb: pd.DataFrame) -> Dict[str, List[Dict[str, str]]]:
@@ -878,7 +912,7 @@ _MAX_RELOAD_HISTORY = 50
 
 @app.post("/data/reload")
 async def reload_data():
-    """Forces the backend to reload the asset and cable spreadsheets."""
+    """Forces the backend to reload asset, cable, and knowledgebase data from avl_data."""
     try:
         reload_dataframes()
         df_net_reload = load_network_data()
@@ -1237,7 +1271,7 @@ async def get_asset_details(asset_tag: str):
 
 @app.get("/assets/{asset_tag}/network")
 def get_asset_network(asset_tag: str):
-    """Returns NIC records from network.xlsx for the given asset tag as a flat list."""
+    """Returns NIC records for the given asset tag as a flat list."""
     target_norm = normalize_tag_value(asset_tag)
     if not target_norm or target_norm not in VALID_ASSET_TAGS_NORMALIZED:
         raise HTTPException(status_code=404, detail=f"Asset tag not found: {asset_tag}")
@@ -2711,7 +2745,7 @@ def get_dashboard_crosspoint():
 @app.get("/api/network/targets")
 def get_network_targets():
     """
-    Returns all Monitor=Yes rows from network.xlsx that have an IP address.
+    Returns all Monitor=Yes rows from the network table that have an IP address.
     This is the canonical source of truth for monitored nodes.  The webapp
     backend pushes this list to CueCommander (POST /api/network/targets) each
     time the dashboard is fetched or data is reloaded — CueCommander does not
@@ -2761,8 +2795,7 @@ def get_dashboard_network():
     """
     Network monitoring panel for the operational dashboard.
 
-    Config exceptions (Monitor=Yes but no IP) are derived directly from
-    network.xlsx — always available.
+    Config exceptions (Monitor=Yes but no IP) are derived from the network table.
 
     Ping results come from CueCommander GET /api/network/status.
     Returns status='unavailable' for that section if CueCommander is unreachable.
@@ -2771,7 +2804,7 @@ def get_dashboard_network():
     df_assets = load_assets_data()
 
     # Push current target list to CueCommander so it knows what to ping.
-    # Webapp is the source of truth (reads network.xlsx); CC never calls us.
+    # Webapp is the source of truth for network targets; CC never calls us.
     _push_network_targets_to_cuecommander(_build_network_targets(df_net))
 
     # --- Config exceptions: Monitor=Yes rows with no IP ---
@@ -3008,17 +3041,6 @@ def get_manuals(asset_tag: str):
 
 
 # ── Glossary ──────────────────────────────────────────────────────────────────
-
-def _avl_data_get(path: str):
-    """Fetch JSON from the avl_data API. Raises HTTPException on failure."""
-    url = f"{_AVL_DATA_URL}{path}"
-    try:
-        with _urllib_request.urlopen(url, timeout=10) as resp:
-            return _json.loads(resp.read().decode())
-    except _urllib_error.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"avl_data API error: {exc.code} {path}")
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"avl_data API unavailable: {exc}")
 
 
 @app.get("/glossary/topics")
