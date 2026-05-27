@@ -36,6 +36,7 @@ app.add_middleware(
 )
 
 _IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", "/Users/avuser/uactechdoc/images"))
+_AVL_DATA_URL = os.environ.get("AVL_DATA_URL", "http://localhost:8002")
 
 
 def clean_dataframe_for_json(df: pd.DataFrame) -> pd.DataFrame:
@@ -3008,43 +3009,36 @@ def get_manuals(asset_tag: str):
 
 # ── Glossary ──────────────────────────────────────────────────────────────────
 
-def load_glossary_data() -> pd.DataFrame:
-    """Loads glossary data from glossary.xlsx."""
+def _avl_data_get(path: str):
+    """Fetch JSON from the avl_data API. Raises HTTPException on failure."""
+    url = f"{_AVL_DATA_URL}{path}"
     try:
-        df = pd.read_excel("../data/glossary.xlsx", sheet_name="glossary")
-        df.columns = df.columns.str.strip()
-        df = df.astype(object)
-        for col in ("Topic", "Term", "Sense", "SeeAlso", "Definition"):
-            if col in df.columns:
-                df[col] = df[col].fillna("").astype(str).str.strip()
-                df.loc[df[col].str.lower().isin(("nan", "none")), col] = ""
-        df = df[df["Term"] != ""].copy()
-        return df
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading glossary data: {e}")
+        with _urllib_request.urlopen(url, timeout=10) as resp:
+            return _json.loads(resp.read().decode())
+    except _urllib_error.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"avl_data API error: {exc.code} {path}")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"avl_data API unavailable: {exc}")
 
 
 @app.get("/glossary/topics")
 async def get_glossary_topics():
     """Returns all unique glossary topics, sorted case-insensitively."""
-    df = load_glossary_data()
-    topics = sorted((t for t in df["Topic"].unique() if t), key=str.casefold)
-    return {"topics": topics}
+    return _avl_data_get("/glossary/topics")
 
 
 @app.get("/glossary")
 async def get_glossary(topic: Optional[str] = None):
-    """Returns glossary entries, optionally filtered by topic."""
-    df = load_glossary_data()
-    if topic:
-        df = df[df["Topic"].str.casefold() == topic.casefold()]
+    """Returns glossary entries from avl_data, optionally filtered by topic."""
+    path = f"/glossary?topic={topic}" if topic else "/glossary"
+    rows = _avl_data_get(path)
     return [
         {
-            "topic": row["Topic"],
-            "term": row["Term"],
-            "sense": row.get("Sense", ""),
-            "see_also": row["SeeAlso"],
-            "definition": row["Definition"],
+            "topic":      r.get("topic") or "",
+            "term":       r.get("term") or "",
+            "sense":      r.get("sense") or "",
+            "see_also":   r.get("see_also") or "",
+            "definition": r.get("definition") or "",
         }
-        for _, row in df.iterrows()
+        for r in rows
     ]
