@@ -297,9 +297,23 @@ def build_kb_active_tags(df_kb: pd.DataFrame) -> List[Dict[str, str]]:
 
 
 # Load data globally for the application to avoid reloading on each request
-df_assets = load_assets_data()
-df_cables = load_cables_data()
-df_knowledgebase = load_knowledgebase_data()
+try:
+    df_assets = load_assets_data()
+except Exception as exc:
+    logging.warning("Failed to load assets at startup: %s", exc)
+    df_assets = pd.DataFrame(columns=list(_ASSETS_DB_TO_EXCEL.values()) + ["AssetTagNorm"])
+
+try:
+    df_cables = load_cables_data()
+except Exception as exc:
+    logging.warning("Failed to load cables at startup: %s", exc)
+    df_cables = pd.DataFrame(columns=list(_CABLES_DB_TO_EXCEL.values()) + ["TagNorm", "SrcTagNorm", "DstTagNorm"])
+
+try:
+    df_knowledgebase = load_knowledgebase_data()
+except Exception as exc:
+    logging.warning("Failed to load knowledgebase at startup: %s", exc)
+    df_knowledgebase = pd.DataFrame(columns=list(_KB_DB_TO_EXCEL.values()) + ["AppliesToAssetTagNorm"])
 KB_ACTIVE_TAGS: List[Dict[str, str]] = build_kb_active_tags(df_knowledgebase)
 KB_SEEALSO_MAP: Dict[str, List[Dict[str, str]]] = build_kb_seealso_map(df_knowledgebase)
 ASSET_TAG_LOOKUP: Dict[str, str] = {}
