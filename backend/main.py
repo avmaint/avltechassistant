@@ -1891,7 +1891,7 @@ async def search_assets(
     if in_service_only:
         filtered_assets = filtered_assets[
             filtered_assets["InService"].fillna("").astype(str).str.strip().str.upper()
-            == "Y"
+            .isin({"Y", "YES", "1", "TRUE"})
         ]
 
     if asset_tag:
