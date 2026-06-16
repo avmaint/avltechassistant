@@ -2573,10 +2573,25 @@ def _videohub_adapter(routes_df: pd.DataFrame) -> dict:
     Compare VideoHub cable records against CueCommander's cross-point state.
     API: GET /api/videohub/crosspoints -> {"crosspoints": [{"input": N, "output": N}]}
     """
+    import urllib.error as _urllib_error
+
     try:
         data = _fetch_cuecommander_json("/api/videohub/crosspoints")
         live_map: Dict[int, int] = {
             cp["output"]: cp["input"] for cp in data.get("crosspoints", [])
+        }
+    except _urllib_error.HTTPError as exc:
+        # Read the JSON body for a specific message (e.g. "Videohub data not available")
+        try:
+            body = _json.loads(exc.read().decode())
+            error_msg = body.get("error", str(exc))
+        except Exception:
+            error_msg = str(exc)
+        return {
+            "status": "unavailable",
+            "error": error_msg,
+            "exceptions": [],
+            "total_routes_checked": 0,
         }
     except Exception as exc:
         return {

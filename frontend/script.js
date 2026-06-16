@@ -3280,7 +3280,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (panel.status === "unavailable") {
                 const msg = document.createElement("p");
                 msg.className = "dash-unavailable-msg";
-                msg.textContent = `CueCommander unreachable — ${panel.error || "no detail"}`;
+                msg.textContent = panel.error || "Route data unavailable";
                 card.appendChild(msg);
             } else if (panel.status === "pending") {
                 const msg = document.createElement("p");
