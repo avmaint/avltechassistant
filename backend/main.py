@@ -2468,8 +2468,7 @@ async def get_crosspoint_matrix(
 
 _CUECOMMANDER_BASE: str = os.environ.get(
     "CUECOMMANDER_BASE",
-    "http://uacts-g001:1880",
-    #   "CUECOMMANDER_BASE", "http://127.0.0.1:1880"
+    "http://cumu-g001.local:1880",
 ).rstrip("/")
 _CUECOMMANDER_TIMEOUT_S: int = 5
 
