@@ -26,6 +26,7 @@ const INPUT_PARTNERS_LIST_ID = "inputPartnersList";
 const OUTPUT_PARTNERS_LIST_ID = "outputPartnersList";
 const KNOWLEDGE_BASE_ISSUES_TABLE_ID = "knowledgeBaseIssuesTable";
 const ASSET_MANUALS_CONTAINER_ID = "assetManualsContainer";
+const ASSET_LICENSES_CONTAINER_ID = "assetLicensesContainer";
 
 const FALLBACK_FIELD_LABELS = {
     tag: "Tag",
@@ -136,6 +137,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     crosspointSourceInput.value = globalTargetAsset;
                     handleAssetInputChange("source", globalTargetAsset);
                 }
+            }
+
+            if (button.dataset.tab === "networkViewer" && globalTargetAsset) {
+                fetchAndRenderNetworkDetails(globalTargetAsset);
             }
         });
     });
@@ -2275,6 +2280,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Load all single-asset tabs in parallel (fire-and-forget; each manages its own UI state)
         fetchAndRenderAssetDetails(tag);
         fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
+        if (document.getElementById("networkViewer")?.classList.contains("active")) {
+            fetchAndRenderNetworkDetails(tag);
+        }
         fetchAndRenderDiagramAndCables(
             currentFilters.targetTag,
             currentFilters.direction,
@@ -2291,6 +2299,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const outputPartnersList = document.getElementById(OUTPUT_PARTNERS_LIST_ID);
         const knowledgeBaseIssuesTableContainer = document.getElementById(KNOWLEDGE_BASE_ISSUES_TABLE_ID);
         const manualsContainer = document.getElementById(ASSET_MANUALS_CONTAINER_ID);
+        const licensesContainer = document.getElementById(ASSET_LICENSES_CONTAINER_ID);
 
         // Clear previous content from individual containers only
         if (assetPropertiesContainer) assetPropertiesContainer.innerHTML = '<p>Loading asset details...</p>';
@@ -2298,6 +2307,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (outputPartnersList) outputPartnersList.innerHTML = '';
         if (knowledgeBaseIssuesTableContainer) knowledgeBaseIssuesTableContainer.innerHTML = '';
         if (manualsContainer) manualsContainer.innerHTML = '';
+        if (licensesContainer) licensesContainer.innerHTML = '';
 
         document.querySelector(`.tab-button[data-tab="${ASSET_DETAILS_TAB_ID}"]`).click(); // Switch to asset details tab
 
@@ -2320,6 +2330,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderAssetNetwork(data.network || [], document.getElementById("assetNetworkContainer"));
             renderKnowledgeBaseIssues(data.knowledge_base_issues, knowledgeBaseIssuesTableContainer);
             renderManuals(manualsData, manualsContainer);
+            renderLicenses(data.licenses || [], licensesContainer);
 
             // Update location tab in background
             fetchAndRenderRackProfile(assetTag).catch(e => console.error("rack profile error:", e));
@@ -2352,6 +2363,49 @@ document.addEventListener("DOMContentLoaded", () => {
             list.appendChild(li);
         });
         container.appendChild(list);
+    }
+
+    function renderLicenses(licenses, container) {
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!licenses || licenses.length === 0) {
+            container.innerHTML = '<p class="manuals-empty">No licenses associated with this asset.</p>';
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'property-table licenses-table';
+
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Name</th><th>Acquired By</th><th>Acquired Date</th><th>Terms</th><th>Expiry Terms</th><th>Expiry Date</th><th>Details</th></tr>';
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        licenses.forEach(lic => {
+            const tr = document.createElement('tr');
+
+            const fmt = v => v ? String(v).split('T')[0] : '';
+
+            const detailsCell = lic.confidential
+                ? '<span class="license-confidential" title="License details are confidential">🔒 Confidential</span>'
+                : (lic.license_details
+                    ? `<pre class="license-details-pre">${escapeHtml(lic.license_details)}</pre>`
+                    : '—');
+
+            tr.innerHTML = `
+                <td>${escapeHtml(lic.name || '')}</td>
+                <td>${escapeHtml(lic.acquired_by || '')}</td>
+                <td>${escapeHtml(fmt(lic.acquired_date))}</td>
+                <td>${escapeHtml(lic.terms || '')}</td>
+                <td>${escapeHtml(lic.expiry_terms || '')}</td>
+                <td>${escapeHtml(fmt(lic.expiry_date))}</td>
+                <td>${detailsCell}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
     }
 
     function renderAssetProperties(asset, container) {
@@ -3835,6 +3889,128 @@ document.addEventListener("DOMContentLoaded", () => {
     // Dashboard is the default active tab — load it on startup
     fetchAndRenderDashboard();
     scheduleDashboardRefresh();
+
+    // ── Network Tab ───────────────────────────────────────────────────────────
+    const networkAssetTagSearch  = document.getElementById("networkAssetTagSearch");
+    const networkAssetTagSearchBtn = document.getElementById("networkAssetTagSearchBtn");
+    const networkAddrSearch      = document.getElementById("networkAddrSearch");
+    const networkAddrSearchBtn   = document.getElementById("networkAddrSearchBtn");
+    const networkResultsContainer = document.getElementById("networkResultsContainer");
+    const networkDetailsContainer = document.getElementById("networkDetailsContainer");
+    const networkSearchStatus    = document.getElementById("networkSearchStatus");
+
+    function showNetworkStatus(msg) {
+        if (!networkSearchStatus) return;
+        networkSearchStatus.textContent = msg;
+        networkSearchStatus.classList.toggle("hidden", !msg);
+    }
+
+    async function fetchAndRenderNetworkDetails(tag) {
+        if (!networkDetailsContainer) return;
+        if (networkAssetTagSearch) networkAssetTagSearch.value = tag;
+        showNetworkStatus("Loading…");
+        networkResultsContainer.innerHTML = "";
+        try {
+            const resp = await fetch(`${API_BASE_URL}/assets/${encodeURIComponent(tag)}/network`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const nics = await resp.json();
+            showNetworkStatus("");
+            networkDetailsContainer.innerHTML = `<h3 class="network-asset-heading">${escapeHtml(tag)}</h3>`;
+            renderAssetNetwork(nics, networkDetailsContainer);
+        } catch (err) {
+            showNetworkStatus(`Error loading network data: ${err.message}`);
+            networkDetailsContainer.innerHTML = "";
+        }
+    }
+
+    function renderNetworkSearchResults(results) {
+        networkResultsContainer.innerHTML = "";
+        networkDetailsContainer.innerHTML = "";
+
+        if (results.length === 0) {
+            showEmptyState(networkResultsContainer, "No matching network records found.", "🔍");
+            return;
+        }
+
+        if (results.length === 1) {
+            // Single match — show details directly without the summary table
+            const a = results[0];
+            setGlobalTargetAsset(a.asset_tag);
+            networkDetailsContainer.innerHTML = `<h3 class="network-asset-heading">${escapeHtml(a.asset_tag)}${a.manufacturer || a.model ? ` — ${escapeHtml([a.manufacturer, a.model].filter(Boolean).join(" "))}` : ""}</h3>`;
+            renderAssetNetwork(a.nics, networkDetailsContainer);
+            return;
+        }
+
+        // Multiple matches — summary table with clickable asset tags
+        const table = document.createElement("table");
+        table.className = "network-search-results-table";
+        table.innerHTML = `<thead><tr>
+            <th>Asset Tag</th><th>Manufacturer</th><th>Model</th>
+            <th>IP Addresses</th><th>MAC Addresses</th>
+        </tr></thead>`;
+        const tbody = document.createElement("tbody");
+
+        results.forEach(a => {
+            const tr = document.createElement("tr");
+            const tagCell = document.createElement("td");
+            const tagLink = document.createElement("a");
+            tagLink.href = "#";
+            tagLink.className = "asset-tag-link";
+            tagLink.textContent = a.asset_tag;
+            tagLink.addEventListener("click", e => {
+                e.preventDefault();
+                setGlobalTargetAsset(a.asset_tag);
+                networkDetailsContainer.innerHTML = `<h3 class="network-asset-heading">${escapeHtml(a.asset_tag)}${a.manufacturer || a.model ? ` — ${escapeHtml([a.manufacturer, a.model].filter(Boolean).join(" "))}` : ""}</h3>`;
+                renderAssetNetwork(a.nics, networkDetailsContainer);
+            });
+            tagCell.appendChild(tagLink);
+            tr.appendChild(tagCell);
+            tr.innerHTML += `
+                <td>${escapeHtml(a.manufacturer || "—")}</td>
+                <td>${escapeHtml(a.model        || "—")}</td>
+                <td class="network-ip">${a.ip_addresses.map(escapeHtml).join("<br>") || "—"}</td>
+                <td class="network-mac">${a.mac_addresses.map(escapeHtml).join("<br>") || "—"}</td>`;
+            tr.firstChild.replaceWith(tagCell);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        networkResultsContainer.appendChild(table);
+    }
+
+    async function performNetworkAssetTagSearch() {
+        const tag = networkAssetTagSearch?.value.trim();
+        if (!tag) return;
+        setGlobalTargetAsset(tag);
+        await fetchAndRenderNetworkDetails(tag);
+    }
+
+    async function performNetworkAddrSearch() {
+        const q = networkAddrSearch?.value.trim();
+        if (!q) return;
+        showNetworkStatus("Searching…");
+        networkResultsContainer.innerHTML = "";
+        networkDetailsContainer.innerHTML = "";
+        try {
+            const resp = await fetch(`${API_BASE_URL}/network/search?q=${encodeURIComponent(q)}`);
+            if (resp.status === 400) {
+                const err = await resp.json();
+                showNetworkStatus(err.detail || "Invalid search query.");
+                return;
+            }
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const results = await resp.json();
+            showNetworkStatus("");
+            renderNetworkSearchResults(results);
+        } catch (err) {
+            showNetworkStatus(`Error: ${err.message}`);
+        }
+    }
+
+    if (networkAssetTagSearchBtn) networkAssetTagSearchBtn.addEventListener("click", performNetworkAssetTagSearch);
+    if (networkAddrSearchBtn)     networkAddrSearchBtn.addEventListener("click", performNetworkAddrSearch);
+    if (networkAssetTagSearch)    networkAssetTagSearch.addEventListener("keydown", e => { if (e.key === "Enter") performNetworkAssetTagSearch(); });
+    if (networkAddrSearch)        networkAddrSearch.addEventListener("keydown", e => { if (e.key === "Enter") performNetworkAddrSearch(); });
 
     // ── Deep-link handling ────────────────────────────────────────────────────
     // Supports ?tab=assetDetails&tag=ZVVU-0001 and ?tab=knowledgeBase&issue=KB0001

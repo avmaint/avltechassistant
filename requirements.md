@@ -151,7 +151,26 @@ This document outlines the requirements for the interactive web application.
 
 -   Some nodes support an in-bound and out-bound connection on the same port (for example Floor Boxes). The diagram currently only renders such ports twice but makes all connections to only one side. Put the inbound connection on the left side, and the out-bound on the right. (Or top and Bottom depnding on diagram orientation)
 
-## 8. Pending Enhancements
+## 8. Network Tab
+
+-   **Network Tab:** A dedicated "Network" tab provides two search modes and displays full NIC detail for any asset.
+-   **Asset Tag Lookup:**
+    -   An asset tag input field and Lookup button fetch and display the network records for that asset.
+    -   Performing a lookup sets the global asset tag so other tabs update accordingly.
+    -   Pressing Enter in the asset tag field triggers the lookup.
+    -   When switching to the Network tab while a global asset tag is already set, the tab automatically loads that asset's network data.
+    -   When `setGlobalTargetAsset` is called (from any tab) while the Network tab is active, the network details refresh automatically.
+-   **IP / MAC Address Search:**
+    -   A second input field accepts an IP address (partial or full) or a MAC address.
+    -   Detection rules: if the query contains `.` it is treated as an IP address; if it contains `:` or `-` it is treated as a MAC address.
+    -   MAC address matching normalises both the query and the database values to colon-separated lowercase before comparing, so inconsistent use of `:` vs `-` in the database does not affect results.
+    -   IP matching is a substring search (partial octets accepted).
+    -   Pressing Enter in the address field triggers the search.
+    -   If exactly one asset matches, its full network details are displayed directly and the global asset tag is set.
+    -   If multiple assets match, a summary table is shown listing asset tag, manufacturer, model, all IP addresses, and all MAC addresses for each asset. Clicking an asset tag in the table displays that asset's full network details and sets the global asset tag.
+-   **Backend endpoint:** `GET /network/search?q={query}` implements the address search and returns a list of matching assets with `asset_tag`, `manufacturer`, `model`, `mac_addresses`, `ip_addresses`, and `nics` fields.
+
+## 9. Pending Enhancements
 
 -   Add support for multiple diagram layouts (e.g., hierarchical, radial) to improve readability for complex connectivity.
 -   Provide a context menu on the individual diagram lines to hide. The node context menu should also provide a reshow option with a sublist of available lines that can be readded to the diagram.

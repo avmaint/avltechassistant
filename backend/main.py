@@ -1274,12 +1274,35 @@ async def get_asset_details(asset_tag: str):
     df_net = load_network_data()
     network_nics = _network_rows_for_tag(df_net, asset_tag)
 
+    # 5. Get licenses for this asset (from avl_data API); strip details if confidential
+    licenses_for_asset: list = []
+    try:
+        raw_licenses = _avl_data_get(f"/licenses?asset_tag={asset_tag}")
+        for lic in raw_licenses:
+            entry = {
+                "id":            lic.get("id"),
+                "name":          lic.get("name"),
+                "acquired_by":   lic.get("acquired_by"),
+                "acquired_date": lic.get("acquired_date"),
+                "terms":         lic.get("terms"),
+                "expiry_terms":  lic.get("expiry_terms"),
+                "expiry_date":   lic.get("expiry_date"),
+                "confidential":  lic.get("confidential", False),
+            }
+            # Only include sensitive details when not flagged confidential
+            if not lic.get("confidential", False):
+                entry["license_details"] = lic.get("license_details")
+            licenses_for_asset.append(entry)
+    except HTTPException:
+        pass  # avl_data unavailable or returned an error — degrade gracefully
+
     return {
         "asset": asset_properties,
         "input_partners": input_partners,
         "output_partners": output_partners,
         "knowledge_base_issues": relevant_issues,
         "network": network_nics,
+        "licenses": licenses_for_asset,
     }
 
 
@@ -1293,6 +1316,81 @@ def get_asset_network(asset_tag: str):
     nics = _network_rows_for_tag(df_net, asset_tag)
     display_tag = canonical_display_tag(target_norm)
     return [{"asset_tag": display_tag, **n} for n in nics]
+
+
+@app.get("/network/search")
+def network_search(q: str = Query(..., min_length=1)):
+    """
+    Search network records by partial IP address or MAC address.
+
+    Detection rules applied to q:
+      - Contains '.':        partial IP substring match against the IP column.
+      - Contains ':' or '-': MAC address match; both separator styles are
+                             normalised to ':' before comparing so the database
+                             column format does not matter.
+
+    Returns a list of matching assets ordered by asset tag.  Each item contains
+    the asset tag, manufacturer, model, all MAC and IP addresses for that asset,
+    and full NIC detail records.
+    """
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="q must not be empty")
+
+    df_net    = load_network_data()
+    df_assets = load_assets_data()
+
+    is_ip  = "." in q
+    is_mac = ":" in q or "-" in q
+
+    if is_ip:
+        mask = df_net["IP"].str.contains(re.escape(q), case=False, na=False)
+    elif is_mac:
+        q_norm   = q.lower().replace("-", ":")
+        mac_norm = df_net["MAC"].str.lower().str.replace("-", ":", regex=False)
+        mask     = mac_norm.str.contains(re.escape(q_norm), case=False, na=False)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="q must contain '.' for an IP address or ':'/'-' for a MAC address",
+        )
+
+    matched_tags = df_net.loc[mask, "AssetTagNorm"].unique()
+    if len(matched_tags) == 0:
+        return []
+
+    tag_display: Dict[str, str] = dict(zip(df_net["AssetTagNorm"], df_net["AssetTag"]))
+
+    def _clean_series(series) -> List[str]:
+        seen: Dict[str, None] = {}
+        for v in series:
+            s = str(v).strip()
+            if s and s.lower() not in ("nan", "none", ""):
+                seen[s] = None
+        return list(seen)
+
+    results = []
+    for tag_norm in sorted(matched_tags):
+        display_tag  = tag_display.get(tag_norm, tag_norm)
+        asset_rows   = df_assets[df_assets["AssetTagNorm"] == tag_norm]
+        manufacturer = model = ""
+        if not asset_rows.empty:
+            r            = asset_rows.iloc[0]
+            manufacturer = str(r.get("Manufacturer", "") or "").strip()
+            model        = str(r.get("Model",        "") or "").strip()
+            if manufacturer.lower() in ("nan", "none", ""): manufacturer = ""
+            if model.lower()        in ("nan", "none", ""): model        = ""
+        all_rows = df_net[df_net["AssetTagNorm"] == tag_norm]
+        results.append({
+            "asset_tag":     display_tag,
+            "manufacturer":  manufacturer,
+            "model":         model,
+            "mac_addresses": _clean_series(all_rows["MAC"]),
+            "ip_addresses":  _clean_series(all_rows["IP"]),
+            "nics":          _network_rows_for_tag(df_net, display_tag),
+        })
+
+    return results
 
 
 def _parse_racku(racku_str: str):

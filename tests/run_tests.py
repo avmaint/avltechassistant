@@ -1404,6 +1404,96 @@ def test_glossary_seealso_present_when_expected():
         raise TestFailure("Expected at least one entry with a non-empty see_also")
 
 
+# ── /network/search tests ──────────────────────────────────────────────────────
+
+def _network_search(q: str):
+    return request_json(f"/network/search?q={urllib.parse.quote(q)}")
+
+
+def test_network_search_partial_ip_returns_list():
+    """GET /network/search?q=192.168 returns a list (may be empty if no data)."""
+    data = _network_search("192.168")
+    if not isinstance(data, list):
+        raise TestFailure(f"Expected list, got {type(data).__name__}")
+
+
+def test_network_search_ip_result_shape():
+    """IP search results have required fields: asset_tag, manufacturer, model, mac_addresses, ip_addresses, nics."""
+    data = _network_search("192.168")
+    if not data:
+        return  # No data to validate — not a failure
+    required = {"asset_tag", "manufacturer", "model", "mac_addresses", "ip_addresses", "nics"}
+    for item in data:
+        missing = required - set(item.keys())
+        if missing:
+            raise TestFailure(f"Result missing fields: {missing}")
+        if not isinstance(item["mac_addresses"], list):
+            raise TestFailure("mac_addresses must be a list")
+        if not isinstance(item["ip_addresses"], list):
+            raise TestFailure("ip_addresses must be a list")
+        if not isinstance(item["nics"], list):
+            raise TestFailure("nics must be a list")
+
+
+def test_network_search_ip_results_contain_query():
+    """Every asset returned by an IP search actually has an IP matching the query."""
+    q = "192.168"
+    data = _network_search(q)
+    for item in data:
+        matched = any(q in ip for ip in item["ip_addresses"])
+        if not matched:
+            raise TestFailure(
+                f"Asset {item['asset_tag']} returned but none of its IPs contain '{q}': {item['ip_addresses']}"
+            )
+
+
+def test_network_search_mac_colon_format():
+    """MAC search with colon separators returns a list."""
+    # Use a prefix that is extremely unlikely to exist but tests the plumbing
+    data = _network_search("00:00:00")
+    if not isinstance(data, list):
+        raise TestFailure(f"Expected list, got {type(data).__name__}")
+
+
+def test_network_search_mac_dash_format():
+    """MAC search with dash separators returns a list (normalisation check)."""
+    data = _network_search("00-00-00")
+    if not isinstance(data, list):
+        raise TestFailure(f"Expected list, got {type(data).__name__}")
+
+
+def test_network_search_mac_and_colon_results_equivalent():
+    """Searching the same MAC prefix with ':' and '-' returns identical asset tags."""
+    colon_results = _network_search("00:00:00")
+    dash_results  = _network_search("00-00-00")
+    colon_tags = sorted(r["asset_tag"] for r in colon_results)
+    dash_tags  = sorted(r["asset_tag"] for r in dash_results)
+    if colon_tags != dash_tags:
+        raise TestFailure(
+            f"Colon results {colon_tags} != dash results {dash_tags}"
+        )
+
+
+def test_network_search_no_separator_returns_400():
+    """A query with no '.' or ':'/'-' returns HTTP 400."""
+    url = f"{API_BASE}/network/search?q=abc123"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
+            raise TestFailure(f"Expected 400, got {resp.status}")
+    except urllib.error.HTTPError as exc:
+        if exc.code != 400:
+            raise TestFailure(f"Expected 400, got {exc.code}")
+
+
+def test_network_search_results_ordered_by_asset_tag():
+    """Results are returned in ascending asset tag order."""
+    data = _network_search("192.168")
+    tags = [r["asset_tag"] for r in data]
+    if tags != sorted(tags):
+        raise TestFailure(f"Results not sorted by asset_tag: {tags}")
+
+
 TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("GET /", test_backend_root),
     ("GET /health returns ok status", test_health_endpoint),
@@ -1477,6 +1567,14 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("/api/network/targets: returns at least one monitored node", test_network_targets_non_empty),
     ("/api/network/targets: every entry has asset_tag, ip, related_issue_ids", test_network_targets_required_fields),
     ("/api/network/targets: excludes Monitor=Yes rows with no IP", test_network_targets_no_missing_ip_rows),
+    ("/network/search: partial IP returns list", test_network_search_partial_ip_returns_list),
+    ("/network/search: IP result has required fields", test_network_search_ip_result_shape),
+    ("/network/search: returned assets all match query IP", test_network_search_ip_results_contain_query),
+    ("/network/search: MAC colon format returns list", test_network_search_mac_colon_format),
+    ("/network/search: MAC dash format returns list", test_network_search_mac_dash_format),
+    ("/network/search: colon and dash MAC give same results", test_network_search_mac_and_colon_results_equivalent),
+    ("/network/search: no separator returns 400", test_network_search_no_separator_returns_400),
+    ("/network/search: results ordered by asset_tag", test_network_search_results_ordered_by_asset_tag),
     ("Glossary: returns non-empty list", test_glossary_returns_list),
     ("Glossary: entries have required fields", test_glossary_entries_have_required_fields),
     ("Glossary: topic filter returns matching entries only", test_glossary_topic_filter),

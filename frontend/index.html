@@ -69,6 +69,9 @@
                 <button class="tab-button" data-tab="knowledgeBase">
                     Knowledge Base
                 </button>
+                <button class="tab-button" data-tab="networkViewer">
+                    Network
+                </button>
             </div>
 
             <div id="assetResults" class="tab-content">
@@ -350,6 +353,10 @@
                         <h3>Manuals</h3>
                         <div id="assetManualsContainer"></div>
                     </div>
+                    <div class="licenses-section">
+                        <h3>Licenses</h3>
+                        <div id="assetLicensesContainer"></div>
+                    </div>
                 </div>
             </div>
 
@@ -454,6 +461,19 @@
                     <button id="searchKnowledgeBaseBtn">Search</button>
                 </div>
                 <div id="kbResultsContainer"></div>
+            </div>
+
+            <div id="networkViewer" class="tab-content">
+                <h2>Network</h2>
+                <div class="search-section">
+                    <input type="text" id="networkAssetTagSearch" placeholder="Asset Tag" />
+                    <button id="networkAssetTagSearchBtn">Lookup</button>
+                    <input type="text" id="networkAddrSearch" placeholder="IP address or MAC (e.g. 192.168.1 or 00:1A:2B)" style="min-width:300px" />
+                    <button id="networkAddrSearchBtn">Search</button>
+                </div>
+                <div id="networkSearchStatus" class="status-message hidden"></div>
+                <div id="networkResultsContainer"></div>
+                <div id="networkDetailsContainer"></div>
             </div>
         </div>
 
