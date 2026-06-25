@@ -15,6 +15,7 @@ const ASSET_TABLE_DEFAULT_COLUMNS = ["AssetTag", "Model", "Manufacturer", "Desc"
 const DIAGRAM_INPUT_CONNECTIONS_CONTAINER_ID = "diagramInputConnections";
 const DIAGRAM_OUTPUT_CONNECTIONS_CONTAINER_ID = "diagramOutputConnections";
 const DIAGRAM_INTERNAL_ROUTES_CONTAINER_ID = "diagramInternalRoutes";
+const DIAGRAM_PASSTHROUGHS_CONTAINER_ID = "diagramPassthroughs";
 
 // Asset Details Tab Constants
 const ASSET_DETAILS_TAB_ID = "assetDetails";
@@ -75,6 +76,10 @@ const tableSortStates = {
         direction: 'asc'
     },
     [DIAGRAM_INTERNAL_ROUTES_CONTAINER_ID]: {
+        column: null,
+        direction: 'asc'
+    },
+    [DIAGRAM_PASSTHROUGHS_CONTAINER_ID]: {
         column: null,
         direction: 'asc'
     },
@@ -1215,10 +1220,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const diagramInputConnectionsContainer = document.getElementById(DIAGRAM_INPUT_CONNECTIONS_CONTAINER_ID);
         const diagramOutputConnectionsContainer = document.getElementById(DIAGRAM_OUTPUT_CONNECTIONS_CONTAINER_ID);
         const diagramInternalRoutesContainer = document.getElementById(DIAGRAM_INTERNAL_ROUTES_CONTAINER_ID);
+        const diagramPassthroughsContainer = document.getElementById(DIAGRAM_PASSTHROUGHS_CONTAINER_ID);
 
         if (diagramInputConnectionsContainer) diagramInputConnectionsContainer.innerHTML = '';
         if (diagramOutputConnectionsContainer) diagramOutputConnectionsContainer.innerHTML = '';
         if (diagramInternalRoutesContainer) diagramInternalRoutesContainer.innerHTML = '';
+        if (diagramPassthroughsContainer) diagramPassthroughsContainer.innerHTML = '';
 
         if (targetTag && !cableId) { // Only fetch for asset tags, not cable IDs
             try {
@@ -1230,6 +1237,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     renderConnectionsTable(connData.inputs || [], diagramInputConnectionsContainer, DIAGRAM_INPUT_CONNECTIONS_CONTAINER_ID, "Input Connections", sourceLabels);
                     renderConnectionsTable(connData.outputs || [], diagramOutputConnectionsContainer, DIAGRAM_OUTPUT_CONNECTIONS_CONTAINER_ID, "Output Connections", destLabels);
                     renderConnectionsTable(connData.internal_routes || [], diagramInternalRoutesContainer, DIAGRAM_INTERNAL_ROUTES_CONTAINER_ID, "Internal Routes");
+                    renderConnectionsTable(connData.passthroughs || [], diagramPassthroughsContainer, DIAGRAM_PASSTHROUGHS_CONTAINER_ID, "Passthroughs");
                 }
             } catch (error) {
                 console.error("Error fetching connection tables:", error);

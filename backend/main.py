@@ -617,6 +617,9 @@ def rebuild_field_option_maps() -> None:
         CABLE_FIELD_MAP[canonical] = column
         CABLE_FIELD_LABELS[canonical] = prettify_field_label(column)
 
+    # Virtual computed field: Building / Floor / Room / Sector concatenation
+    ASSET_FIELD_LABELS["bfrs"] = "BFRS"
+
     NODE_FIELD_OPTIONS = set(ASSET_FIELD_LABELS.keys())
     EDGE_FIELD_OPTIONS = set(CABLE_FIELD_LABELS.keys())
 
@@ -833,6 +836,13 @@ def get_asset_field_value(
 ) -> str:
     if field_key == "tag":
         return fallback_tag
+    if field_key == "bfrs":
+        parts = []
+        for col in ("Building", "Floor", "Room", "Sector"):
+            v = normalize_asset_field_value(asset_record.get(col, "") if asset_record else "")
+            if v:
+                parts.append(v)
+        return "/".join(parts)
     column = ASSET_FIELD_MAP.get(field_key)
     if not column:
         return ""
@@ -1128,14 +1138,22 @@ def _build_diagram_connections_payload(target_norm: str) -> Dict[str, Any]:
     )
     internal_routes_df = all_cables[route_mask]
 
-    # Inputs: cables arriving at this node, excluding internal routes
+    # Passthroughs: SrcTag == DstTag == this node and Type contains "passthrough"
+    passthrough_mask = (
+        (all_cables["SrcTagNorm"] == target_norm)
+        & (all_cables["DstTagNorm"] == target_norm)
+        & all_cables["Type"].str.contains("passthrough", case=False, na=False)
+    )
+    passthroughs_df = all_cables[passthrough_mask]
+
+    # Inputs: cables arriving at this node, excluding internal routes and passthroughs
     inputs_df = all_cables[
-        (all_cables["DstTagNorm"] == target_norm) & ~route_mask
+        (all_cables["DstTagNorm"] == target_norm) & ~route_mask & ~passthrough_mask
     ].copy()
 
-    # Outputs: cables leaving this node, excluding internal routes
+    # Outputs: cables leaving this node, excluding internal routes and passthroughs
     outputs_df = all_cables[
-        (all_cables["SrcTagNorm"] == target_norm) & ~route_mask
+        (all_cables["SrcTagNorm"] == target_norm) & ~route_mask & ~passthrough_mask
     ].copy()
 
     # Format internal route rows
@@ -1156,6 +1174,24 @@ def _build_diagram_connections_payload(target_norm: str) -> Dict[str, Any]:
         route_df = clean_dataframe_for_json(route_df)
         route_rows = route_df.to_dict(orient="records")
 
+    # Format passthrough rows (same shape as internal routes)
+    passthrough_rows = []
+    for _, row in passthroughs_df.iterrows():
+        passthrough_rows.append(
+            {
+                "SourcePort": format_display_value(row["SrcPort"]),
+                "DestinationPort": format_display_value(row["DstPort"]),
+                "Protocol": format_display_value(row["Protocol"]),
+                "Usage": format_display_value(row.get("Usage", "")),
+                "CableID": canonical_display_tag(row["Tag"]),
+                "Type": format_display_value(row["Type"]),
+            }
+        )
+    if passthrough_rows:
+        pt_df = pd.DataFrame(passthrough_rows)
+        pt_df = clean_dataframe_for_json(pt_df)
+        passthrough_rows = pt_df.to_dict(orient="records")
+
     return {
         "inputs": _format_external_connection_rows(
             inputs_df, "SrcTagNorm", "DstPort", "SrcPort", is_input=True
@@ -1164,6 +1200,7 @@ def _build_diagram_connections_payload(target_norm: str) -> Dict[str, Any]:
             outputs_df, "DstTagNorm", "SrcPort", "DstPort", is_input=False
         ),
         "internal_routes": route_rows,
+        "passthroughs": passthrough_rows,
     }
 
 
