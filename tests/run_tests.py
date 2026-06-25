@@ -357,7 +357,7 @@ def test_diagram_connections_combined_endpoint_shape():
     data = request_json(f"/diagram/connections?target_tag={urllib.parse.quote(target_tag)}")
     if not isinstance(data, dict):
         raise TestFailure("Combined connections endpoint did not return a dict")
-    for key in ("inputs", "outputs", "internal_routes"):
+    for key in ("inputs", "outputs", "internal_routes", "passthroughs"):
         if key not in data:
             raise TestFailure(f"Combined connections response missing key: {key}")
         if not isinstance(data[key], list):
@@ -423,6 +423,66 @@ def test_non_routed_asset_returns_empty_internal_routes():
     # Should still have outputs or inputs
     if not data.get("outputs") and not data.get("inputs"):
         raise TestFailure(f"Expected at least some connections for {target_tag}")
+
+
+def test_passthroughs_present_for_patch_panel():
+    # 2602-1800-F38 is a patch panel with many passthrough cables
+    target_tag = "2602-1800-F38"
+    data = request_json(f"/diagram/connections?target_tag={urllib.parse.quote(target_tag)}")
+    if not isinstance(data, dict):
+        raise TestFailure("Combined connections endpoint did not return a dict")
+    if "passthroughs" not in data:
+        raise TestFailure("Response missing 'passthroughs' key")
+    pts = data["passthroughs"]
+    if not pts:
+        raise TestFailure(f"Expected passthrough entries for {target_tag}")
+    first = pts[0]
+    for key in ("SourcePort", "DestinationPort", "Protocol", "CableID", "Type"):
+        if key not in first:
+            raise TestFailure(f"Passthrough entry missing key: {key}")
+    if not any("passthrough" in (r.get("Type") or "").lower() for r in pts):
+        raise TestFailure("No passthrough row has Type containing 'passthrough'")
+
+
+def test_passthroughs_excluded_from_inputs_and_outputs():
+    # Passthrough cables must not appear in the inputs or outputs lists
+    target_tag = "2602-1800-F38"
+    data = request_json(f"/diagram/connections?target_tag={urllib.parse.quote(target_tag)}")
+    pt_ids = {r["CableID"] for r in data.get("passthroughs", [])}
+    if not pt_ids:
+        raise TestFailure(f"No passthroughs found for {target_tag} — cannot verify exclusion")
+    for row in data.get("inputs", []):
+        if row["CableID"] in pt_ids:
+            raise TestFailure(f"Passthrough cable {row['CableID']} appears in inputs")
+    for row in data.get("outputs", []):
+        if row["CableID"] in pt_ids:
+            raise TestFailure(f"Passthrough cable {row['CableID']} appears in outputs")
+    for row in data.get("internal_routes", []):
+        if row["CableID"] in pt_ids:
+            raise TestFailure(f"Passthrough cable {row['CableID']} appears in internal_routes")
+
+
+def test_bfrs_in_diagram_node_options():
+    # /diagram/options must include 'bfrs' as an available node field option
+    data = request_json("/diagram/options")
+    if not isinstance(data, dict) or "node" not in data:
+        raise TestFailure("diagram/options did not return expected shape")
+    node_options = data["node"].get("options", [])
+    option_values = [o.get("value") if isinstance(o, dict) else o for o in node_options]
+    if "bfrs" not in option_values:
+        raise TestFailure(f"'bfrs' not found in node options: {option_values}")
+
+
+def test_bfrs_label_in_diagram_options():
+    # The 'bfrs' option must have label "BFRS"
+    data = request_json("/diagram/options")
+    node_options = data.get("node", {}).get("options", [])
+    for opt in node_options:
+        if isinstance(opt, dict) and opt.get("value") == "bfrs":
+            if opt.get("label") != "BFRS":
+                raise TestFailure(f"Expected label 'BFRS', got {opt.get('label')!r}")
+            return
+    raise TestFailure("'bfrs' option not found in node options")
 
 def test_get_asset_details_endpoint():
     target_tag = "ZVKU-A001"
@@ -1519,6 +1579,10 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("Internal routes excluded from outputs and inputs", test_internal_routes_excluded_from_outputs),
     ("Internal routes appear in internal_routes table", test_internal_routes_present_in_internal_routes_table),
     ("Non-routed asset returns empty internal_routes", test_non_routed_asset_returns_empty_internal_routes),
+    ("Passthroughs: patch panel has passthrough entries", test_passthroughs_present_for_patch_panel),
+    ("Passthroughs: excluded from inputs, outputs, and internal_routes", test_passthroughs_excluded_from_inputs_and_outputs),
+    ("BFRS: present in diagram node field options", test_bfrs_in_diagram_node_options),
+    ("BFRS: option has label 'BFRS'", test_bfrs_label_in_diagram_options),
     ("Asset details endpoint returns data", test_get_asset_details_endpoint),
     ("Asset details knowledge base integration", test_get_asset_details_knowledgebase_integration),
     ("Asset details partner navigation", test_asset_details_partner_navigation),
