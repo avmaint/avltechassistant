@@ -1548,11 +1548,13 @@ document.addEventListener("DOMContentLoaded", () => {
             );
             const relevantInboundPorts = new Set();
             routeCables.forEach(r => {
+                const isPassthrough = (r.Type || '').toLowerCase().includes('passthrough');
+                const srcPort = (r.SrcPort || '').trim().toLowerCase();
                 const dstPort = (r.DstPort || '').trim().toLowerCase();
-                if (outboundSrcPorts.has(dstPort)) {
-                    const srcPort = (r.SrcPort || '').trim().toLowerCase();
-                    if (srcPort) relevantInboundPorts.add(srcPort);
-                }
+                // Normal direction: outbound SrcPort matches route DstPort → yield route SrcPort
+                if (outboundSrcPorts.has(dstPort) && srcPort) relevantInboundPorts.add(srcPort);
+                // Reverse direction for passthroughs (signal is bi-directional)
+                if (isPassthrough && outboundSrcPorts.has(srcPort) && dstPort) relevantInboundPorts.add(dstPort);
             });
             allInbound.forEach(c => {
                 const dstPort = (c.DstPort || '').trim().toLowerCase();
@@ -1573,11 +1575,13 @@ document.addEventListener("DOMContentLoaded", () => {
             );
             const relevantOutboundPorts = new Set();
             routeCables.forEach(r => {
+                const isPassthrough = (r.Type || '').toLowerCase().includes('passthrough');
                 const srcPort = (r.SrcPort || '').trim().toLowerCase();
-                if (inboundDstPorts.has(srcPort)) {
-                    const dstPort = (r.DstPort || '').trim().toLowerCase();
-                    if (dstPort) relevantOutboundPorts.add(dstPort);
-                }
+                const dstPort = (r.DstPort || '').trim().toLowerCase();
+                // Normal direction: inbound DstPort matches route SrcPort → yield route DstPort
+                if (inboundDstPorts.has(srcPort) && dstPort) relevantOutboundPorts.add(dstPort);
+                // Reverse direction for passthroughs (signal is bi-directional)
+                if (isPassthrough && inboundDstPorts.has(dstPort) && srcPort) relevantOutboundPorts.add(srcPort);
             });
             allOutbound.forEach(c => {
                 const srcPort = (c.SrcPort || '').trim().toLowerCase();

@@ -1950,6 +1950,13 @@ def generate_dot_string(
             if edge_color_value:
                 edge_attributes.append(f'color="{edge_color_value}"')
                 edge_attributes.append(f'fontcolor="{edge_color_value}"')
+            # Passthrough cables are bi-directional
+            all_passthrough = all(
+                str(e["row"].get("Type", "")).lower().find("passthrough") != -1
+                for e in edges
+            )
+            if all_passthrough:
+                edge_attributes.append('dir=both')
             attr_text = " [" + ", ".join(edge_attributes) + "]"
             from_port = (
                 f'"{src_node}":"{src_port_id}"'
@@ -1980,6 +1987,9 @@ def generate_dot_string(
             if edge_color_value:
                 edge_attributes.append(f'color="{edge_color_value}"')
                 edge_attributes.append(f'fontcolor="{edge_color_value}"')
+            # Passthrough cables are bi-directional
+            if str(row.get("Type", "")).lower().find("passthrough") != -1:
+                edge_attributes.append('dir=both')
 
             from_port = (
                 f'"{edge["src_node"]}":"{html.escape(str(edge["src_port"]))}"'

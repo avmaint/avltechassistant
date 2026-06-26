@@ -484,6 +484,21 @@ def test_bfrs_label_in_diagram_options():
             return
     raise TestFailure("'bfrs' option not found in node options")
 
+
+def test_passthrough_edges_rendered_bidirectional():
+    # 2602-1800-F38 has passthrough cables; with include_passthroughs=true the DOT
+    # output must contain dir=both on at least one edge.
+    params = urllib.parse.urlencode({
+        "target_tag": "2602-1800-F38",
+        "direction": "both",
+        "include_passthroughs": "true",
+    })
+    dot_text = request_text(f"/graphviz/dot?{params}")
+    if "dir=both" not in dot_text:
+        raise TestFailure(
+            "Expected 'dir=both' in DOT output for passthrough cables of 2602-1800-F38"
+        )
+
 def test_get_asset_details_endpoint():
     target_tag = "ZVKU-A001"
     data = request_json(f"/assets/{urllib.parse.quote(target_tag)}/details")
@@ -1583,6 +1598,7 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("Passthroughs: excluded from inputs, outputs, and internal_routes", test_passthroughs_excluded_from_inputs_and_outputs),
     ("BFRS: present in diagram node field options", test_bfrs_in_diagram_node_options),
     ("BFRS: option has label 'BFRS'", test_bfrs_label_in_diagram_options),
+    ("Passthrough edges rendered with dir=both", test_passthrough_edges_rendered_bidirectional),
     ("Asset details endpoint returns data", test_get_asset_details_endpoint),
     ("Asset details knowledge base integration", test_get_asset_details_knowledgebase_integration),
     ("Asset details partner navigation", test_asset_details_partner_navigation),
