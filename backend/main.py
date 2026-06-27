@@ -2379,10 +2379,24 @@ def compute_graph_elements(
         in_ports  = sorted(ports["dst"].values())
         out_ports = sorted(ports["src"].values())
 
+        # Node dimensions for the HTML overlay
+        PORT_COL_W   = 80   # width of each port column (px)
+        CENTER_W     = 160  # width of the center info column (px)
+        PORT_ROW_H   = 22   # height per port row (px)
+        CENTER_ROW_H = 18   # height per field row (px)
+        V_PAD        = 16   # vertical padding inside the node (px)
+        has_ports = bool(in_ports or out_ports)
+        node_width = CENTER_W + (PORT_COL_W * 2 if has_ports else 0)
+        center_height  = len(fields) * CENTER_ROW_H + V_PAD
+        max_port_rows  = max(len(in_ports), len(out_ports), 0)
+        port_height    = max_port_rows * PORT_ROW_H + V_PAD if max_port_rows else 0
+        node_height    = max(center_height, port_height, 44)
+
         cy_nodes.append({"data": {
             "id": node_tag, "display_tag": display_tag,
             "is_junction": False, "bg_color": bg_color,
             "fields": fields, "in_ports": in_ports, "out_ports": out_ports,
+            "node_width": node_width, "node_height": node_height,
         }})
 
     cy_edges: List[Dict] = []

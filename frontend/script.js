@@ -791,28 +791,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function buildCytoscapeStyle() {
         return [
+            // Non-junction asset nodes: transparent background — HTML overlay provides visuals
             {
-                selector: 'node',
+                selector: 'node[!is_junction]',
                 style: {
                     'shape': 'rectangle',
-                    'background-color': 'data(bg_color)',
-                    'label': 'data(display_tag)',
-                    'text-valign': 'center',
-                    'text-halign': 'center',
-                    'color': '#1a1a2e',
-                    'font-size': '11px',
-                    'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    'font-weight': '600',
-                    'text-wrap': 'wrap',
-                    'text-max-width': '160px',
-                    'width': 'label',
-                    'height': 'label',
-                    'padding': '10px',
+                    'background-opacity': 0,
+                    'label': '',
+                    'width': 'data(node_width)',
+                    'height': 'data(node_height)',
                     'border-width': 1.5,
                     'border-color': '#0052cc',
+                    'padding': '0px',
                     'cursor': 'pointer',
                 }
             },
+            {
+                selector: 'node[!is_junction]:selected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#0040aa',
+                    'border-style': 'dashed',
+                }
+            },
+            // Junction splice dots
             {
                 selector: 'node[?is_junction]',
                 style: {
@@ -823,14 +825,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     'label': '',
                     'border-width': 0,
                     'padding': '0px',
-                }
-            },
-            {
-                selector: 'node:selected',
-                style: {
-                    'border-width': 3,
-                    'border-color': '#0052cc',
-                    'background-color': '#cce0ff',
                 }
             },
             {
@@ -858,11 +852,37 @@ document.addEventListener("DOMContentLoaded", () => {
             },
             {
                 selector: 'edge[?bidirectional]',
-                style: {
-                    'source-arrow-shape': 'triangle',
-                }
+                style: { 'source-arrow-shape': 'triangle' }
             },
         ];
+    }
+
+    // Build the HTML content for a non-junction node's overlay
+    function buildNodeHtml(data) {
+        const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const inPorts  = data.in_ports  || [];
+        const outPorts = data.out_ports || [];
+        const hasPorts = inPorts.length > 0 || outPorts.length > 0;
+        const fields   = data.fields    || {};
+        const tag      = data.display_tag || data.id;
+
+        const inHtml = inPorts.map(p =>
+            `<div class="cy-port cy-port-in">${esc(p)}</div>`).join('');
+        const outHtml = outPorts.map(p =>
+            `<div class="cy-port cy-port-out">${esc(p)}</div>`).join('');
+
+        // Center column: tag (bold) + remaining fields
+        const fieldKeys = Object.keys(fields);
+        const tagVal    = fields['tag'] || tag;
+        const otherVals = fieldKeys.filter(k => k !== 'tag').map(k => fields[k]).filter(Boolean);
+        const centerHtml = `<div class="cy-node-tag">${esc(tagVal)}</div>`
+            + otherVals.map(v => `<div class="cy-node-field">${esc(v)}</div>`).join('');
+
+        return `<div class="cy-node-html" style="width:${data.node_width}px;height:${data.node_height}px;background:${esc(data.bg_color)};">`
+            + (hasPorts ? `<div class="cy-port-col cy-in-col">${inHtml}</div>` : '')
+            + `<div class="cy-center-col">${centerHtml}</div>`
+            + (hasPorts ? `<div class="cy-port-col cy-out-col">${outHtml}</div>` : '')
+            + '</div>';
     }
 
     function renderCytoscape(graphData) {
@@ -874,16 +894,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Build full label for non-junction nodes: tag + extra fields
-        graphData.nodes.forEach(n => {
-            if (!n.data.is_junction) {
-                const fields = n.data.fields || {};
-                const lines = [n.data.display_tag];
-                Object.values(fields).forEach(v => { if (v && v !== n.data.display_tag) lines.push(v); });
-                n.data.display_tag = lines.join('\n');
-            }
-        });
-
         cyInstance = cytoscape({
             container: diagramRenderArea,
             elements: {
@@ -894,8 +904,8 @@ document.addEventListener("DOMContentLoaded", () => {
             layout: {
                 name: 'dagre',
                 rankDir: 'LR',
-                nodeSep: 40,
-                rankSep: 80,
+                nodeSep: 50,
+                rankSep: 100,
                 edgeSep: 10,
                 animate: false,
             },
@@ -903,6 +913,18 @@ document.addEventListener("DOMContentLoaded", () => {
             maxZoom: 4,
             wheelSensitivity: 0.3,
         });
+
+        // HTML overlays for port tables (requires cytoscape-node-html-label)
+        if (typeof cyInstance.nodeHtmlLabel === 'function') {
+            cyInstance.nodeHtmlLabel([{
+                query: 'node[!is_junction]',
+                halign: 'center',
+                valign: 'center',
+                halignBox: 'center',
+                valignBox: 'center',
+                tpl: buildNodeHtml,
+            }]);
+        }
 
         cyInstance.on('tap', 'node', async function(evt) {
             const node = evt.target;
@@ -935,22 +957,21 @@ document.addEventListener("DOMContentLoaded", () => {
             if (node.data('is_junction')) return;
             const tag = node.data('id');
             const renderedPos = evt.renderedPosition;
-            showContextMenu(tag, renderedPos.x + diagramRenderArea.getBoundingClientRect().left,
-                                 renderedPos.y + diagramRenderArea.getBoundingClientRect().top);
+            const rect = diagramRenderArea.getBoundingClientRect();
+            showContextMenu(tag, renderedPos.x + rect.left, renderedPos.y + rect.top);
         });
 
         cyInstance.on('tap', function(evt) {
             if (evt.target === cyInstance) hideContextMenu();
         });
 
-        // Show port info tooltip on edge hover via title attribute on edge label
         cyInstance.on('mouseover', 'edge', function(evt) {
             const d = evt.target.data();
             const lines = [];
             if (d.cable_id) lines.push(`Cable: ${d.cable_id}`);
             if (d.src_port || d.dst_port) lines.push(`Ports: ${d.src_port || '—'} → ${d.dst_port || '—'}`);
             if (d.protocol) lines.push(`Protocol: ${d.protocol}`);
-            if (d.type) lines.push(`Type: ${d.type}`);
+            if (d.type)     lines.push(`Type: ${d.type}`);
             if (lines.length) diagramRenderArea.title = lines.join('\n');
         });
         cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });

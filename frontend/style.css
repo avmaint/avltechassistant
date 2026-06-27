@@ -183,6 +183,94 @@ button:hover {
     display: block;
 }
 
+/* ── Cytoscape node HTML overlay ─────────────────────────────────────────── */
+.cy-node-html {
+    display: flex;
+    flex-direction: row;
+    border: 1.5px solid #0052cc;
+    border-radius: 4px;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 11px;
+    line-height: 1.3;
+    pointer-events: none; /* let Cytoscape handle mouse events */
+}
+
+.cy-center-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 6px 8px;
+    text-align: center;
+    min-width: 0;
+}
+
+.cy-node-tag {
+    font-weight: 700;
+    font-size: 11px;
+    color: #1a1a2e;
+    word-break: break-all;
+}
+
+.cy-node-field {
+    font-size: 10px;
+    color: #444;
+    margin-top: 2px;
+    word-break: break-word;
+}
+
+.cy-port-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: rgba(255,255,255,0.55);
+    border-left: 1px solid #c8d6e8;
+    border-right: 1px solid #c8d6e8;
+    padding: 4px 0;
+    min-width: 0;
+    flex-shrink: 0;
+}
+
+.cy-in-col {
+    border-left: none;
+    border-right: 1px solid #c8d6e8;
+}
+
+.cy-out-col {
+    border-left: 1px solid #c8d6e8;
+    border-right: none;
+}
+
+.cy-port {
+    font-size: 9.5px;
+    color: #234;
+    padding: 1px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 22px;
+    display: flex;
+    align-items: center;
+}
+
+.cy-port-in {
+    text-align: left;
+    border-bottom: 1px solid #dde5ee;
+}
+
+.cy-port-out {
+    text-align: right;
+    justify-content: flex-end;
+    border-bottom: 1px solid #dde5ee;
+}
+
+.cy-port:last-child {
+    border-bottom: none;
+}
+
 .diagram-export-bar {
     display: flex;
     gap: var(--space-2);
