@@ -2353,6 +2353,17 @@ def compute_graph_elements(
 
     assets_by_tag = {row["AssetTag"]: row.to_dict() for _, row in assets_df.iterrows() if row.get("AssetTag")}
 
+    # Stable port ID used in both node port declarations and edge sourcePort/targetPort
+    def _pid(node: str, side: str, label: str) -> str:
+        return f"{node}::{side}::{re.sub(r'[^A-Za-z0-9_]', '_', str(label))}"
+
+    # Sizing constants (must match the CSS port row height)
+    PORT_COL_W   = 80
+    CENTER_W     = 160
+    PORT_ROW_H   = 22
+    CENTER_ROW_H = 18
+    V_PAD        = 16
+
     cy_nodes: List[Dict] = []
     for node_tag in sorted(all_nodes):
         if is_junction_node_id(node_tag):
@@ -2360,6 +2371,7 @@ def compute_graph_elements(
                 "id": node_tag, "label": "•", "display_tag": node_tag,
                 "is_junction": True, "bg_color": "#888888",
                 "in_ports": [], "out_ports": [], "fields": {},
+                "node_width": 12, "node_height": 12,
             }})
             continue
 
@@ -2379,12 +2391,6 @@ def compute_graph_elements(
         in_ports  = sorted(ports["dst"].values())
         out_ports = sorted(ports["src"].values())
 
-        # Node dimensions for the HTML overlay
-        PORT_COL_W   = 80   # width of each port column (px)
-        CENTER_W     = 160  # width of the center info column (px)
-        PORT_ROW_H   = 22   # height per port row (px)
-        CENTER_ROW_H = 18   # height per field row (px)
-        V_PAD        = 16   # vertical padding inside the node (px)
         has_ports = bool(in_ports or out_ports)
         node_width = CENTER_W + (PORT_COL_W * 2 if has_ports else 0)
         center_height  = len(fields) * CENTER_ROW_H + V_PAD
@@ -2392,11 +2398,28 @@ def compute_graph_elements(
         port_height    = max_port_rows * PORT_ROW_H + V_PAD if max_port_rows else 0
         node_height    = max(center_height, port_height, 44)
 
+        # ELK port declarations — positions are from the node's top-left corner.
+        # Using FIXED_POS so ELK routes edges from/to exactly these coordinates,
+        # which match the HTML overlay port row positions (justify-content:center).
+        elk_ports: List[Dict] = []
+        for i, lbl in enumerate(in_ports):
+            py = node_height / 2.0 - len(in_ports) * PORT_ROW_H / 2.0 + i * PORT_ROW_H + PORT_ROW_H / 2.0
+            elk_ports.append({"id": _pid(node_tag, "in", lbl),
+                               "x": 0.0, "y": py,
+                               "properties": {"port.side": "WEST"}})
+        for i, lbl in enumerate(out_ports):
+            py = node_height / 2.0 - len(out_ports) * PORT_ROW_H / 2.0 + i * PORT_ROW_H + PORT_ROW_H / 2.0
+            elk_ports.append({"id": _pid(node_tag, "out", lbl),
+                               "x": float(node_width), "y": py,
+                               "properties": {"port.side": "EAST"}})
+
         cy_nodes.append({"data": {
             "id": node_tag, "display_tag": display_tag,
             "is_junction": False, "bg_color": bg_color,
             "fields": fields, "in_ports": in_ports, "out_ports": out_ports,
             "node_width": node_width, "node_height": node_height,
+            "ports": elk_ports,
+            "properties": {"portConstraints": "FIXED_POS"},
         }})
 
     cy_edges: List[Dict] = []
@@ -2409,7 +2432,7 @@ def compute_graph_elements(
             if color_edges_by_protocol and collapse_strategy == "protocol":
                 color = get_protocol_color(group_label)
             all_pt = all("passthrough" in str(e["row"].get("Type", "")).lower() for e in edges)
-            cy_edges.append({"data": {
+            edge_data: Dict[str, Any] = {
                 "id": f"collapsed::{src_node}::{dst_node}::{group_label}",
                 "source": src_node, "target": dst_node,
                 "label": f"{group_label} ({count})",
@@ -2418,7 +2441,12 @@ def compute_graph_elements(
                 "cable_id": "", "src_port": group_label, "dst_port": group_label,
                 "protocol": group_label if collapse_strategy == "protocol" else "",
                 "type": group_label if collapse_strategy == "type" else "",
-            }})
+            }
+            if not is_junction_node_id(src_node):
+                edge_data["sourcePort"] = _pid(src_node, "out", group_label)
+            if not is_junction_node_id(dst_node):
+                edge_data["targetPort"] = _pid(dst_node, "in", group_label)
+            cy_edges.append({"data": edge_data})
     else:
         for edge in graph_edges:
             row = edge["row"]
@@ -2426,15 +2454,13 @@ def compute_graph_elements(
             for field_key in edge_fields:
                 raw = get_edge_field_value(row, field_key)
                 if raw:
-                    # Strip HTML escaping added for DOT; Cytoscape uses plain text
                     clean = raw.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
                     label_parts.append(clean)
             color = get_protocol_color(row.get("Protocol")) if color_edges_by_protocol else DEFAULT_PROTOCOL_COLOR
             is_pt = "passthrough" in str(row.get("Type", "")).lower()
             cable_id = canonical_display_tag(normalize_tag_value(str(row.get("Tag", ""))))
-            # Deduplicate edge id when same cable appears more than once
             edge_id = cable_id or f"{edge['src_node']}::{edge['dst_node']}"
-            cy_edges.append({"data": {
+            edge_data = {
                 "id": edge_id, "source": edge["src_node"], "target": edge["dst_node"],
                 "label": "\n".join(label_parts),
                 "color": color, "bidirectional": is_pt, "collapsed": False,
@@ -2443,7 +2469,12 @@ def compute_graph_elements(
                 "protocol": str(row.get("Protocol", "") or ""),
                 "type":     str(row.get("Type",     "") or ""),
                 "usage":    str(row.get("Usage",    "") or ""),
-            }})
+            }
+            if edge["src_port"] and not edge["src_is_junction"]:
+                edge_data["sourcePort"] = _pid(edge["src_node"], "out", edge["src_port"])
+            if edge["dst_port"] and not edge["dst_is_junction"]:
+                edge_data["targetPort"] = _pid(edge["dst_node"], "in", edge["dst_port"])
+            cy_edges.append({"data": edge_data})
 
     return {"nodes": cy_nodes, "edges": cy_edges}
 

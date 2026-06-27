@@ -836,7 +836,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     'target-arrow-shape': 'triangle',
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
-                    'curve-style': 'bezier',
+                    // round-segments follows ELK's computed bend-point waypoints
+                    // with rounded corners at each turn
+                    'curve-style': 'round-segments',
+                    'corner-radius': 6,
                     'label': 'data(label)',
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -885,45 +888,6 @@ document.addEventListener("DOMContentLoaded", () => {
             + '</div>';
     }
 
-    // Compute y-offset (relative to node center) for port index i of N total ports.
-    // Port rows are centred within the node via justify-content:center.
-    // The 4px column padding cancels algebraically leaving: -(N*22)/2 + i*22 + 11
-    const PORT_ROW_H = 22;
-
-    function portYPct(portIndex, totalPorts, nodeHeight) {
-        const yFromCenter = -(totalPorts * PORT_ROW_H) / 2 + portIndex * PORT_ROW_H + PORT_ROW_H / 2;
-        return ((0.5 + yFromCenter / nodeHeight) * 100).toFixed(2);
-    }
-
-    function computePortEndpoints(cy) {
-        cy.edges().forEach(edge => {
-            const d = edge.data();
-            const srcNode = cy.getElementById(d.source);
-            const dstNode = cy.getElementById(d.target);
-            if (!srcNode.length || !dstNode.length) return;
-
-            // Source end: connect to the out-port on the right side of the source node
-            if (d.src_port && !srcNode.data('is_junction')) {
-                const outPorts = srcNode.data('out_ports') || [];
-                const idx = outPorts.indexOf(d.src_port);
-                if (idx >= 0) {
-                    const yPct = portYPct(idx, outPorts.length, srcNode.data('node_height'));
-                    edge.style('source-endpoint', `100% ${yPct}%`);
-                }
-            }
-
-            // Target end: connect to the in-port on the left side of the target node
-            if (d.dst_port && !dstNode.data('is_junction')) {
-                const inPorts = dstNode.data('in_ports') || [];
-                const idx = inPorts.indexOf(d.dst_port);
-                if (idx >= 0) {
-                    const yPct = portYPct(idx, inPorts.length, dstNode.data('node_height'));
-                    edge.style('target-endpoint', `0% ${yPct}%`);
-                }
-            }
-        });
-    }
-
     function renderCytoscape(graphData) {
         destroyCy();
         diagramRenderArea.innerHTML = '';
@@ -941,32 +905,36 @@ document.addEventListener("DOMContentLoaded", () => {
             },
             style: buildCytoscapeStyle(),
             layout: {
-                name: 'dagre',
-                rankDir: 'LR',
-                nodeSep: 50,
-                rankSep: 100,
-                edgeSep: 10,
+                name: 'elk',
                 animate: false,
+                elk: {
+                    algorithm: 'layered',
+                    'elk.direction': 'RIGHT',
+                    'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+                    'elk.spacing.nodeNode': '60',
+                    'elk.edgeRouting': 'ORTHOGONAL',
+                    'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+                    'elk.layered.unnecessaryBendpoints': 'true',
+                },
             },
             minZoom: 0.1,
             maxZoom: 4,
             wheelSensitivity: 0.3,
         });
 
-        // HTML overlays for port tables (requires cytoscape-node-html-label)
-        if (typeof cyInstance.nodeHtmlLabel === 'function') {
-            cyInstance.nodeHtmlLabel([{
-                query: 'node[!is_junction]',
-                halign: 'center',
-                valign: 'center',
-                halignBox: 'center',
-                valignBox: 'center',
-                tpl: buildNodeHtml,
-            }]);
-        }
-
-        // Anchor each edge end to the pixel position of its port within the node
-        computePortEndpoints(cyInstance);
+        // nodeHtmlLabel needs positioned nodes — attach after ELK layout finishes
+        cyInstance.one('layoutstop', function () {
+            if (typeof cyInstance.nodeHtmlLabel === 'function') {
+                cyInstance.nodeHtmlLabel([{
+                    query: 'node[!is_junction]',
+                    halign: 'center',
+                    valign: 'center',
+                    halignBox: 'center',
+                    valignBox: 'center',
+                    tpl: buildNodeHtml,
+                }]);
+            }
+        });
 
         cyInstance.on('tap', 'node', async function(evt) {
             const node = evt.target;
