@@ -922,7 +922,11 @@ document.addEventListener("DOMContentLoaded", () => {
             wheelSensitivity: 0.3,
         });
 
-        // nodeHtmlLabel needs positioned nodes — attach after ELK layout finishes
+        // After ELK layout: register HTML overlays and snap edge endpoints to ports.
+        // ELK provides bend-point waypoints (obstacle avoidance) but Cytoscape still
+        // calculates start/end attachment via its own boundary intersection. We override
+        // those attachment points using the exact port x/y coordinates from node data,
+        // which were computed in the backend to match the HTML overlay port row positions.
         cyInstance.one('layoutstop', function () {
             if (typeof cyInstance.nodeHtmlLabel === 'function') {
                 cyInstance.nodeHtmlLabel([{
@@ -934,6 +938,32 @@ document.addEventListener("DOMContentLoaded", () => {
                     tpl: buildNodeHtml,
                 }]);
             }
+
+            cyInstance.edges().forEach(function (edge) {
+                const d = edge.data();
+
+                if (d.sourcePort && !cyInstance.getElementById(d.source).data('is_junction')) {
+                    const srcNode = cyInstance.getElementById(d.source);
+                    const ports   = srcNode.data('ports') || [];
+                    const port    = ports.find(p => p.id === d.sourcePort);
+                    if (port) {
+                        const xPct = ((port.x / srcNode.data('node_width'))  * 100).toFixed(1);
+                        const yPct = ((port.y / srcNode.data('node_height')) * 100).toFixed(1);
+                        edge.style('source-endpoint', `${xPct}% ${yPct}%`);
+                    }
+                }
+
+                if (d.targetPort && !cyInstance.getElementById(d.target).data('is_junction')) {
+                    const dstNode = cyInstance.getElementById(d.target);
+                    const ports   = dstNode.data('ports') || [];
+                    const port    = ports.find(p => p.id === d.targetPort);
+                    if (port) {
+                        const xPct = ((port.x / dstNode.data('node_width'))  * 100).toFixed(1);
+                        const yPct = ((port.y / dstNode.data('node_height')) * 100).toFixed(1);
+                        edge.style('target-endpoint', `${xPct}% ${yPct}%`);
+                    }
+                }
+            });
         });
 
         cyInstance.on('tap', 'node', async function(evt) {
