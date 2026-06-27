@@ -2415,7 +2415,7 @@ def compute_graph_elements(
                 "label": f"{group_label} ({count})",
                 "color": color, "bidirectional": all_pt,
                 "collapsed": True, "count": count, "group_label": group_label,
-                "cable_id": "", "src_port": "", "dst_port": "",
+                "cable_id": "", "src_port": group_label, "dst_port": group_label,
                 "protocol": group_label if collapse_strategy == "protocol" else "",
                 "type": group_label if collapse_strategy == "type" else "",
             }})
