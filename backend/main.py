@@ -651,6 +651,11 @@ async def get_asset_columns():
     return {"columns": options, "defaults": defaults}
 
 
+def _natural_key(s: str) -> List:
+    """Sort key that orders embedded integers numerically: '2' < '12' < '23'."""
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", str(s))]
+
+
 def clamp(value: float, min_value: float = 0.0, max_value: float = 255.0) -> int:
     return int(max(min_value, min(max_value, value)))
 
@@ -1896,7 +1901,7 @@ def generate_dot_string(
         dst_ports_content = ""
         dst_port_items = node_ports.get(node_tag_val, {}).get("dst", {})
         sorted_dst_ports = sorted(
-            dst_port_items.items(), key=lambda item: item[1].lower()
+            dst_port_items.items(), key=lambda item: _natural_key(item[1])
         )
         if sorted_dst_ports:
             dst_ports_content = (
@@ -1909,7 +1914,7 @@ def generate_dot_string(
         src_ports_content = ""
         src_port_items = node_ports.get(node_tag_val, {}).get("src", {})
         sorted_src_ports = sorted(
-            src_port_items.items(), key=lambda item: item[1].lower()
+            src_port_items.items(), key=lambda item: _natural_key(item[1])
         )
         if sorted_src_ports:
             src_ports_content = (
@@ -2364,6 +2369,31 @@ def compute_graph_elements(
     CENTER_ROW_H = 18
     V_PAD        = 16
 
+    # Pass 1: build natural-sorted in_ports for every non-junction node so the
+    # barycenter heuristic below can look up each in-port's rank.
+    in_ports_by_node: Dict[str, List[str]] = {}
+    for node_tag in all_nodes:
+        if not is_junction_node_id(node_tag):
+            raw_dst = node_ports.get(node_tag, {"dst": {}}).get("dst", {})
+            in_ports_by_node[node_tag] = sorted(raw_dst.values(), key=_natural_key)
+
+    # (dst_node, dst_port_label) -> vertical rank among that node's in-ports
+    in_port_rank: Dict[Tuple[str, str], int] = {}
+    for node_tag, ports_list in in_ports_by_node.items():
+        for rank, lbl in enumerate(ports_list):
+            in_port_rank[(node_tag, lbl)] = rank
+
+    def _barycenter(src_node: str, port_label: str) -> float:
+        """Average rank of the in-ports this out-port connects to (minimises crossings)."""
+        ranks = [
+            in_port_rank[(str(e["dst_node"]), str(e["dst_port"]))]
+            for e in graph_edges
+            if str(e["src_node"]) == src_node
+            and str(e["src_port"]) == port_label
+            and (str(e["dst_node"]), str(e["dst_port"])) in in_port_rank
+        ]
+        return sum(ranks) / len(ranks) if ranks else float("inf")
+
     cy_nodes: List[Dict] = []
     for node_tag in sorted(all_nodes):
         if is_junction_node_id(node_tag):
@@ -2388,8 +2418,12 @@ def compute_graph_elements(
                 fields[field_key] = val
 
         ports = node_ports.get(node_tag, {"src": {}, "dst": {}})
-        in_ports  = sorted(ports["dst"].values())
-        out_ports = sorted(ports["src"].values())
+        in_ports  = in_ports_by_node.get(node_tag, [])
+        # Sort out-ports by barycenter (avg rank of connected in-ports), break ties with natural sort.
+        out_ports = sorted(
+            ports["src"].values(),
+            key=lambda lbl: (_barycenter(node_tag, lbl), _natural_key(lbl)),
+        )
 
         has_ports = bool(in_ports or out_ports)
         node_width = CENTER_W + (PORT_COL_W * 2 if has_ports else 0)
