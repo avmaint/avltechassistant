@@ -937,13 +937,15 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             // Snap edge endpoints to port row positions.
-            // cytoscape-elk only updates node positions; edge routing from ELK is not
-            // applied. We compute port y-offsets from the index in the sorted port list
-            // (same formula as the HTML overlay, so they align visually).
-            const PORT_ROW_H = 22;
-            function portYPct(idx, total, nodeH) {
-                const yFromTop = nodeH / 2 - total * PORT_ROW_H / 2 + idx * PORT_ROW_H + PORT_ROW_H / 2;
-                return (yFromTop / nodeH * 100).toFixed(1);
+            // Cytoscape source-endpoint/target-endpoint percentages are CENTRE-RELATIVE,
+            // scaled to node dimensions:
+            //   "50%  0%"  = right edge, vertically centred  (source)
+            //   "-50% 0%"  = left edge,  vertically centred  (target)
+            //   y% is (yFromTop/nodeH * 100) - 50, converting from top-based to centre-based.
+            const PORT_ROW_H_EP = 22;
+            function portEndpointY(idx, total, nodeH) {
+                const yFromTop = nodeH / 2 - total * PORT_ROW_H_EP / 2 + idx * PORT_ROW_H_EP + PORT_ROW_H_EP / 2;
+                return (yFromTop / nodeH * 100 - 50).toFixed(1);
             }
 
             cyInstance.edges().forEach(function (edge) {
@@ -955,8 +957,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         const outPorts = srcNode.data('out_ports') || [];
                         const idx = outPorts.indexOf(d.src_port);
                         if (idx >= 0) {
-                            const yPct = portYPct(idx, outPorts.length, srcNode.data('node_height'));
-                            edge.style('source-endpoint', '100% ' + yPct + '%');
+                            const yPct = portEndpointY(idx, outPorts.length, srcNode.data('node_height'));
+                            edge.style('source-endpoint', '50% ' + yPct + '%');
                         }
                     }
                 }
@@ -967,8 +969,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         const inPorts = dstNode.data('in_ports') || [];
                         const idx = inPorts.indexOf(d.dst_port);
                         if (idx >= 0) {
-                            const yPct = portYPct(idx, inPorts.length, dstNode.data('node_height'));
-                            edge.style('target-endpoint', '0% ' + yPct + '%');
+                            const yPct = portEndpointY(idx, inPorts.length, dstNode.data('node_height'));
+                            edge.style('target-endpoint', '-50% ' + yPct + '%');
                         }
                     }
                 }
