@@ -909,9 +909,21 @@ document.addEventListener("DOMContentLoaded", () => {
                     'elk.direction': 'RIGHT',
                     'elk.layered.spacing.nodeNodeBetweenLayers': '100',
                     'elk.spacing.nodeNode': '60',
-                    'elk.edgeRouting': 'ORTHOGONAL',
+                    // Crossing minimisation: LAYER_SWEEP with TWO_SIDED greedy switching
+                    // is the most thorough option short of an ILP solver.
+                    'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+                    'elk.layered.crossingMinimization.greedySwitchType': 'TWO_SIDED',
+                    // thoroughness controls the number of optimisation passes across all
+                    // Sugiyama phases. Default is 7; 25 gives noticeably better results
+                    // on mid-sized graphs at the cost of a slightly longer layout time.
+                    'elk.thoroughness': '25',
+                    // NETWORK_SIMPLEX minimises dummy nodes / edge length (better layer
+                    // assignment leads to fewer crossings downstream).
+                    'elk.layered.layering.strategy': 'NETWORK_SIMPLEX',
+                    // BRANDES_KOEPF with BALANCED alignment centres nodes on their
+                    // neighbours, reducing visual zig-zag.
                     'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-                    'elk.layered.unnecessaryBendpoints': 'true',
+                    'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
                 },
             },
             minZoom: 0.1,
