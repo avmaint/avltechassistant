@@ -836,10 +836,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     'target-arrow-shape': 'triangle',
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
-                    // round-segments follows ELK's computed bend-point waypoints
-                    // with rounded corners at each turn
-                    'curve-style': 'round-segments',
-                    'corner-radius': 6,
+                    'curve-style': 'bezier',
                     'label': 'data(label)',
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -939,28 +936,40 @@ document.addEventListener("DOMContentLoaded", () => {
                 }]);
             }
 
+            // Snap edge endpoints to port row positions.
+            // cytoscape-elk only updates node positions; edge routing from ELK is not
+            // applied. We compute port y-offsets from the index in the sorted port list
+            // (same formula as the HTML overlay, so they align visually).
+            const PORT_ROW_H = 22;
+            function portYPct(idx, total, nodeH) {
+                const yFromTop = nodeH / 2 - total * PORT_ROW_H / 2 + idx * PORT_ROW_H + PORT_ROW_H / 2;
+                return (yFromTop / nodeH * 100).toFixed(1);
+            }
+
             cyInstance.edges().forEach(function (edge) {
                 const d = edge.data();
 
-                if (d.sourcePort && !cyInstance.getElementById(d.source).data('is_junction')) {
+                if (d.src_port) {
                     const srcNode = cyInstance.getElementById(d.source);
-                    const ports   = srcNode.data('ports') || [];
-                    const port    = ports.find(p => p.id === d.sourcePort);
-                    if (port) {
-                        const xPct = ((port.x / srcNode.data('node_width'))  * 100).toFixed(1);
-                        const yPct = ((port.y / srcNode.data('node_height')) * 100).toFixed(1);
-                        edge.style('source-endpoint', `${xPct}% ${yPct}%`);
+                    if (srcNode.length && !srcNode.data('is_junction')) {
+                        const outPorts = srcNode.data('out_ports') || [];
+                        const idx = outPorts.indexOf(d.src_port);
+                        if (idx >= 0) {
+                            const yPct = portYPct(idx, outPorts.length, srcNode.data('node_height'));
+                            edge.style('source-endpoint', '100% ' + yPct + '%');
+                        }
                     }
                 }
 
-                if (d.targetPort && !cyInstance.getElementById(d.target).data('is_junction')) {
+                if (d.dst_port) {
                     const dstNode = cyInstance.getElementById(d.target);
-                    const ports   = dstNode.data('ports') || [];
-                    const port    = ports.find(p => p.id === d.targetPort);
-                    if (port) {
-                        const xPct = ((port.x / dstNode.data('node_width'))  * 100).toFixed(1);
-                        const yPct = ((port.y / dstNode.data('node_height')) * 100).toFixed(1);
-                        edge.style('target-endpoint', `${xPct}% ${yPct}%`);
+                    if (dstNode.length && !dstNode.data('is_junction')) {
+                        const inPorts = dstNode.data('in_ports') || [];
+                        const idx = inPorts.indexOf(d.dst_port);
+                        if (idx >= 0) {
+                            const yPct = portYPct(idx, inPorts.length, dstNode.data('node_height'));
+                            edge.style('target-endpoint', '0% ' + yPct + '%');
+                        }
                     }
                 }
             });
