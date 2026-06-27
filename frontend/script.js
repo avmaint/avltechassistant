@@ -782,16 +782,184 @@ document.addEventListener("DOMContentLoaded", () => {
     const exportSvgBtn = document.getElementById("exportSvgBtn");
     const exportPngBtn = document.getElementById("exportPngBtn");
 
-    function getDiagramSvgElement() {
-        return diagramRenderArea ? diagramRenderArea.querySelector("svg") : null;
+    // ── Cytoscape instance ────────────────────────────────────────────────────
+    let cyInstance = null;
+
+    function destroyCy() {
+        if (cyInstance) { cyInstance.destroy(); cyInstance = null; }
+    }
+
+    function buildCytoscapeStyle() {
+        return [
+            {
+                selector: 'node',
+                style: {
+                    'shape': 'rectangle',
+                    'background-color': 'data(bg_color)',
+                    'label': 'data(display_tag)',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'color': '#1a1a2e',
+                    'font-size': '11px',
+                    'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    'font-weight': '600',
+                    'text-wrap': 'wrap',
+                    'text-max-width': '160px',
+                    'width': 'label',
+                    'height': 'label',
+                    'padding': '10px',
+                    'border-width': 1.5,
+                    'border-color': '#0052cc',
+                    'cursor': 'pointer',
+                }
+            },
+            {
+                selector: 'node[?is_junction]',
+                style: {
+                    'shape': 'ellipse',
+                    'width': 12,
+                    'height': 12,
+                    'background-color': '#555',
+                    'label': '',
+                    'border-width': 0,
+                    'padding': '0px',
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#0052cc',
+                    'background-color': '#cce0ff',
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'line-color': 'data(color)',
+                    'target-arrow-color': 'data(color)',
+                    'target-arrow-shape': 'triangle',
+                    'source-arrow-color': 'data(color)',
+                    'source-arrow-shape': 'none',
+                    'curve-style': 'bezier',
+                    'label': 'data(label)',
+                    'font-size': '9px',
+                    'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    'color': '#333',
+                    'text-rotation': 'autorotate',
+                    'text-margin-y': -8,
+                    'text-wrap': 'wrap',
+                    'text-max-width': '120px',
+                    'text-background-color': '#fff',
+                    'text-background-opacity': 0.75,
+                    'text-background-padding': '2px',
+                }
+            },
+            {
+                selector: 'edge[?bidirectional]',
+                style: {
+                    'source-arrow-shape': 'triangle',
+                }
+            },
+        ];
+    }
+
+    function renderCytoscape(graphData) {
+        destroyCy();
+        diagramRenderArea.innerHTML = '';
+
+        if (!graphData || (!graphData.nodes.length && !graphData.edges.length)) {
+            diagramRenderArea.innerHTML = '<p style="padding:16px;color:#666;">No assets found to display.</p>';
+            return;
+        }
+
+        // Build full label for non-junction nodes: tag + extra fields
+        graphData.nodes.forEach(n => {
+            if (!n.data.is_junction) {
+                const fields = n.data.fields || {};
+                const lines = [n.data.display_tag];
+                Object.values(fields).forEach(v => { if (v && v !== n.data.display_tag) lines.push(v); });
+                n.data.display_tag = lines.join('\n');
+            }
+        });
+
+        cyInstance = cytoscape({
+            container: diagramRenderArea,
+            elements: {
+                nodes: graphData.nodes,
+                edges: graphData.edges,
+            },
+            style: buildCytoscapeStyle(),
+            layout: {
+                name: 'dagre',
+                rankDir: 'LR',
+                nodeSep: 40,
+                rankSep: 80,
+                edgeSep: 10,
+                animate: false,
+            },
+            minZoom: 0.1,
+            maxZoom: 4,
+            wheelSensitivity: 0.3,
+        });
+
+        cyInstance.on('tap', 'node', async function(evt) {
+            const node = evt.target;
+            if (node.data('is_junction')) return;
+            const tag = node.data('id');
+
+            targetTagFilter.value = tag;
+            baseTargetTag = tag;
+            hiddenNodes.clear();
+            hiddenCables.clear();
+            hiddenNodeNeighbors.clear();
+            allKnownDiagramAssetTags.clear();
+            expansionResultLog.clear();
+            currentFilters = {
+                targetTag: tag, cableId: '',
+                direction: directionFilter.value,
+                cableType: cableTypeFilter.value,
+                protocol: protocolFilter ? protocolFilter.value.trim() : '',
+            };
+            initializeExpansionMap(baseTargetTag, currentFilters.direction);
+            await fetchAndRenderDiagramAndCables(
+                currentFilters.targetTag, currentFilters.direction,
+                currentFilters.cableType, currentFilters.protocol,
+                currentFilters.cableId, true
+            );
+        });
+
+        cyInstance.on('cxttap', 'node', function(evt) {
+            const node = evt.target;
+            if (node.data('is_junction')) return;
+            const tag = node.data('id');
+            const renderedPos = evt.renderedPosition;
+            showContextMenu(tag, renderedPos.x + diagramRenderArea.getBoundingClientRect().left,
+                                 renderedPos.y + diagramRenderArea.getBoundingClientRect().top);
+        });
+
+        cyInstance.on('tap', function(evt) {
+            if (evt.target === cyInstance) hideContextMenu();
+        });
+
+        // Show port info tooltip on edge hover via title attribute on edge label
+        cyInstance.on('mouseover', 'edge', function(evt) {
+            const d = evt.target.data();
+            const lines = [];
+            if (d.cable_id) lines.push(`Cable: ${d.cable_id}`);
+            if (d.src_port || d.dst_port) lines.push(`Ports: ${d.src_port || '—'} → ${d.dst_port || '—'}`);
+            if (d.protocol) lines.push(`Protocol: ${d.protocol}`);
+            if (d.type) lines.push(`Type: ${d.type}`);
+            if (lines.length) diagramRenderArea.title = lines.join('\n');
+        });
+        cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });
     }
 
     if (exportSvgBtn) {
         exportSvgBtn.addEventListener("click", () => {
-            const svg = getDiagramSvgElement();
-            if (!svg) { alert("No diagram to export. Please load a diagram first."); return; }
-            const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(svg);
+            if (!cyInstance) { alert("No diagram to export. Please load a diagram first."); return; }
+            const svgStr = cyInstance.svg({ full: true, bg: '#ffffff' });
             const blob = new Blob([svgStr], { type: "image/svg+xml" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -804,28 +972,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (exportPngBtn) {
         exportPngBtn.addEventListener("click", () => {
-            const svg = getDiagramSvgElement();
-            if (!svg) { alert("No diagram to export. Please load a diagram first."); return; }
-            const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(svg);
-            const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-            const url = URL.createObjectURL(svgBlob);
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.naturalWidth || svg.viewBox.baseVal.width || 1200;
-                canvas.height = img.naturalHeight || svg.viewBox.baseVal.height || 800;
-                const ctx = canvas.getContext("2d");
-                ctx.fillStyle = "#ffffff";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0);
-                URL.revokeObjectURL(url);
-                const a = document.createElement("a");
-                a.href = canvas.toDataURL("image/png");
-                a.download = `diagram-${baseTargetTag || "export"}.png`;
-                a.click();
-            };
-            img.src = url;
+            if (!cyInstance) { alert("No diagram to export. Please load a diagram first."); return; }
+            const dataUrl = cyInstance.png({ output: 'base64uri', full: true, scale: 2, bg: '#ffffff' });
+            const a = document.createElement("a");
+            a.href = dataUrl;
+            a.download = `diagram-${baseTargetTag || "export"}.png`;
+            a.click();
         });
     }
 
@@ -1191,29 +1343,26 @@ document.addEventListener("DOMContentLoaded", () => {
             dotParams.append("hidden_cable_ids", Array.from(hiddenCables).join(','));
         }
 
-        let svgText = "";
         try {
-            // Expect SVG text directly from the backend
-            const svgResponse = await fetch(`${API_BASE_URL}/graphviz/dot?${dotParams.toString()}`);
-            if (!svgResponse.ok) {
-                const errorData = await svgResponse.json().catch(() => ({}));
-                const message = errorData.detail || `HTTP error! status: ${svgResponse.status}`;
+            const graphResponse = await fetch(`${API_BASE_URL}/graph/json?${dotParams.toString()}`);
+            if (!graphResponse.ok) {
+                const errorData = await graphResponse.json().catch(() => ({}));
+                const message = errorData.detail || `HTTP error! status: ${graphResponse.status}`;
+                destroyCy();
                 diagramRenderArea.innerHTML = `<p style="color: red;">${message}</p>`;
                 setDiagramStatus(message, "error");
                 return { availableChanged: false };
             }
-            svgText = await svgResponse.text(); // Get response as text
-
-            // Inject the SVG text directly into the div
-            diagramRenderArea.innerHTML = svgText;
+            const graphData = await graphResponse.json();
+            renderCytoscape(graphData);
             hideContextMenu();
-            
         } catch (error) {
-            console.error("Error fetching or rendering Graphviz SVG:", error);
-            const errMsg = `Error loading or rendering diagram: ${error.message}`;
+            console.error("Error fetching or rendering diagram:", error);
+            const errMsg = `Error loading diagram: ${error.message}`;
+            destroyCy();
             diagramRenderArea.innerHTML = `<p style="color: red;">${errMsg}</p>`;
             setDiagramStatus(errMsg, "error");
-            return { availableChanged: false }; // Exit if SVG fetch fails
+            return { availableChanged: false };
         }
 
         // --- Fetch and render connection tables (inputs, outputs, internal routes) ---
@@ -1248,7 +1397,6 @@ document.addEventListener("DOMContentLoaded", () => {
             fetchAndRenderRackProfile(targetTag).catch(e => console.error("rack profile error:", e));
         }
 
-        attachNodeContextMenuHandlers();
         const availableChanged = prevAvailableSnapshot.length !== availableDiagramAssetTags.length ||
             prevAvailableSnapshot.some((tag, idx) => tag !== availableDiagramAssetTags[idx]);
         if (availableChanged || newlyDiscovered.length > 0) {
@@ -1292,62 +1440,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
     function attachNodeContextMenuHandlers() {
-        const svgNodes = diagramRenderArea.querySelectorAll('g.node');
-        svgNodes.forEach(node => {
-            const titleEl = node.querySelector('title');
-            if (!titleEl || !titleEl.textContent) return;
-            const tag = titleEl.textContent.trim();
-            if (!tag) return;
-            if (tag.startsWith("__cable_junction__::")) return;
-
-            // Add click handler to make node the new target
-            node.addEventListener('click', async (event) => {
-                // Only handle left click (button 0)
-                if (event.button !== 0) return;
-
-                console.log('Node clicked:', tag);
-
-                // Update the target tag filter
-                targetTagFilter.value = tag;
-
-                // Update diagram state
-                baseTargetTag = tag;
-                hiddenNodes.clear();
-                hiddenCables.clear();
-                hiddenNodeNeighbors.clear();
-                allKnownDiagramAssetTags.clear();
-                expansionResultLog.clear();
-
-                currentFilters = {
-                    targetTag: tag,
-                    cableId: "",
-                    direction: directionFilter.value,
-                    cableType: cableTypeFilter.value,
-                    protocol: protocolFilter ? protocolFilter.value.trim() : ""
-                };
-
-                initializeExpansionMap(baseTargetTag, currentFilters.direction);
-
-                // Refresh the diagram with the new target
-                await fetchAndRenderDiagramAndCables(
-                    currentFilters.targetTag,
-                    currentFilters.direction,
-                    currentFilters.cableType,
-                    currentFilters.protocol,
-                    currentFilters.cableId,
-                    true // reset active assets
-                );
-            });
-
-            // Add visual feedback on hover
-            node.style.cursor = 'pointer';
-
-            // Context menu handler (right-click)
-            node.addEventListener('contextmenu', (event) => {
-                event.preventDefault();
-                showContextMenu(tag, event.clientX, event.clientY);
-            });
-        });
+        // No-op: node interaction is now handled by Cytoscape event listeners
+        // set up inside renderCytoscape(). This stub is kept so that any
+        // remaining call sites do not error.
     }
 
     function showContextMenu(tag, clientX, clientY) {

@@ -2283,6 +2283,256 @@ async def filter_cables(
     }
 
 
+def compute_graph_elements(
+    filtered_cables: pd.DataFrame,
+    assets_df: pd.DataFrame,
+    all_nodes_to_render: Set[str],
+    node_fields: List[str],
+    edge_fields: List[str],
+    color_nodes_by_category: bool,
+    color_edges_by_protocol: bool,
+    collapse_strategy: str,
+) -> Dict[str, Any]:
+    """
+    Builds a Cytoscape-compatible graph from filtered cable and asset data.
+    Returns {"nodes": [...], "edges": [...]}.
+    Mirrors generate_dot_string's logic but outputs JSON instead of DOT.
+    """
+    collapse_mode = collapse_strategy in {"protocol", "type"}
+    asset_nodes = {str(tag).strip() for tag in all_nodes_to_render if str(tag).strip()}
+    node_ports: Dict[str, Dict[str, Dict[str, str]]] = {
+        tag: {"src": {}, "dst": {}} for tag in asset_nodes
+    }
+    graph_edges: List[Dict[str, object]] = []
+
+    def resolve_endpoint(row: pd.Series, side: str) -> Tuple[str, str, bool]:
+        cable_tag = normalize_tag_value(row.get("Tag"))
+        endpoint_tag = normalize_tag_value(row.get("SrcTag" if side == "src" else "DstTag"))
+        endpoint_display = canonical_display_tag(endpoint_tag)
+        port_value = normalize_asset_field_value(row.get("SrcPort" if side == "src" else "DstPort", ""))
+        if endpoint_tag and endpoint_tag in VALID_CABLE_IDS_NORMALIZED:
+            return build_junction_node_id(cable_tag, endpoint_tag), port_value, True
+        return endpoint_display, port_value, False
+
+    all_nodes: Set[str] = set(asset_nodes)
+    for _, row in filtered_cables.iterrows():
+        src_node, src_port, src_is_junc = resolve_endpoint(row, "src")
+        dst_node, dst_port, dst_is_junc = resolve_endpoint(row, "dst")
+        if not src_node or not dst_node:
+            continue
+        graph_edges.append({
+            "src_node": src_node, "dst_node": dst_node,
+            "src_port": src_port, "dst_port": dst_port,
+            "src_is_junction": src_is_junc, "dst_is_junction": dst_is_junc,
+            "row": row,
+        })
+        all_nodes.add(src_node)
+        all_nodes.add(dst_node)
+        if not src_is_junc:
+            node_ports.setdefault(src_node, {"src": {}, "dst": {}})
+        if not dst_is_junc:
+            node_ports.setdefault(dst_node, {"src": {}, "dst": {}})
+
+    grouped_entries: Dict[Tuple[str, str, str], List[Dict[str, object]]] = {}
+    if collapse_mode:
+        for edge in graph_edges:
+            row = edge["row"]
+            gl = collapse_label_for_row(row, collapse_strategy)
+            grouped_entries.setdefault((str(edge["src_node"]), str(edge["dst_node"]), gl), []).append(edge)
+        for (src_node, dst_node, gl), _ in grouped_entries.items():
+            if src_node in node_ports:
+                node_ports[src_node]["src"][sanitize_port_identifier(gl, "out")] = gl
+            if dst_node in node_ports:
+                node_ports[dst_node]["dst"][sanitize_port_identifier(gl, "in")] = gl
+    else:
+        for edge in graph_edges:
+            if edge["src_node"] in node_ports and edge["src_port"]:
+                node_ports[str(edge["src_node"])]["src"][str(edge["src_port"])] = str(edge["src_port"])
+            if edge["dst_node"] in node_ports and edge["dst_port"]:
+                node_ports[str(edge["dst_node"])]["dst"][str(edge["dst_port"])] = str(edge["dst_port"])
+
+    assets_by_tag = {row["AssetTag"]: row.to_dict() for _, row in assets_df.iterrows() if row.get("AssetTag")}
+
+    cy_nodes: List[Dict] = []
+    for node_tag in sorted(all_nodes):
+        if is_junction_node_id(node_tag):
+            cy_nodes.append({"data": {
+                "id": node_tag, "label": "•", "display_tag": node_tag,
+                "is_junction": True, "bg_color": "#888888",
+                "in_ports": [], "out_ports": [], "fields": {},
+            }})
+            continue
+
+        asset_record = assets_by_tag.get(node_tag, {})
+        display_tag = str(node_tag).strip()
+        bg_color = DEFAULT_NODE_BACKGROUND
+        if color_nodes_by_category and asset_record.get("Category"):
+            bg_color = get_category_color(asset_record["Category"])
+
+        fields: Dict[str, str] = {}
+        for field_key in node_fields:
+            val = get_asset_field_value(asset_record, field_key, display_tag)
+            if val:
+                fields[field_key] = val
+
+        ports = node_ports.get(node_tag, {"src": {}, "dst": {}})
+        in_ports  = sorted(ports["dst"].values())
+        out_ports = sorted(ports["src"].values())
+
+        cy_nodes.append({"data": {
+            "id": node_tag, "display_tag": display_tag,
+            "is_junction": False, "bg_color": bg_color,
+            "fields": fields, "in_ports": in_ports, "out_ports": out_ports,
+        }})
+
+    cy_edges: List[Dict] = []
+    if collapse_mode:
+        for (src_node, dst_node, group_label), edges in grouped_entries.items():
+            if not src_node or not dst_node:
+                continue
+            count = len(edges)
+            color = DEFAULT_PROTOCOL_COLOR
+            if color_edges_by_protocol and collapse_strategy == "protocol":
+                color = get_protocol_color(group_label)
+            all_pt = all("passthrough" in str(e["row"].get("Type", "")).lower() for e in edges)
+            cy_edges.append({"data": {
+                "id": f"collapsed::{src_node}::{dst_node}::{group_label}",
+                "source": src_node, "target": dst_node,
+                "label": f"{group_label} ({count})",
+                "color": color, "bidirectional": all_pt,
+                "collapsed": True, "count": count, "group_label": group_label,
+                "cable_id": "", "src_port": "", "dst_port": "",
+                "protocol": group_label if collapse_strategy == "protocol" else "",
+                "type": group_label if collapse_strategy == "type" else "",
+            }})
+    else:
+        for edge in graph_edges:
+            row = edge["row"]
+            label_parts = []
+            for field_key in edge_fields:
+                raw = get_edge_field_value(row, field_key)
+                if raw:
+                    # Strip HTML escaping added for DOT; Cytoscape uses plain text
+                    clean = raw.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+                    label_parts.append(clean)
+            color = get_protocol_color(row.get("Protocol")) if color_edges_by_protocol else DEFAULT_PROTOCOL_COLOR
+            is_pt = "passthrough" in str(row.get("Type", "")).lower()
+            cable_id = canonical_display_tag(normalize_tag_value(str(row.get("Tag", ""))))
+            # Deduplicate edge id when same cable appears more than once
+            edge_id = cable_id or f"{edge['src_node']}::{edge['dst_node']}"
+            cy_edges.append({"data": {
+                "id": edge_id, "source": edge["src_node"], "target": edge["dst_node"],
+                "label": "\n".join(label_parts),
+                "color": color, "bidirectional": is_pt, "collapsed": False,
+                "cable_id": cable_id,
+                "src_port": edge["src_port"] or "", "dst_port": edge["dst_port"] or "",
+                "protocol": str(row.get("Protocol", "") or ""),
+                "type":     str(row.get("Type",     "") or ""),
+                "usage":    str(row.get("Usage",    "") or ""),
+            }})
+
+    return {"nodes": cy_nodes, "edges": cy_edges}
+
+
+
+@app.get("/graph/json")
+async def get_graph_json(
+    target_tag: Optional[str] = None,
+    cable_id: Optional[str] = None,
+    direction: str = "both",
+    cable_type: Optional[str] = None,
+    protocol: Optional[str] = None,
+    visible_asset_tags: Optional[str] = Query(None),
+    additional_asset_tags: Optional[str] = Query(None),
+    expansions: Optional[str] = Query(None),
+    node_fields: Optional[str] = Query(None),
+    edge_fields: Optional[str] = Query(None),
+    hidden_cable_ids: Optional[str] = Query(None),
+    color_nodes_by_category: bool = Query(False),
+    color_edges_by_protocol: bool = Query(False),
+    collapse_strategy: Optional[str] = Query("none"),
+    exclude_internal_routes: bool = True,
+    include_physical_routes: bool = Query(True),
+    include_logical_routes: bool = Query(False),
+    include_passthroughs: bool = Query(False),
+):
+    """Returns Cytoscape-compatible graph JSON for the diagram frontend."""
+    target_norm, _ = resolve_query_target(target_tag, cable_id)
+    expansion_value = expansions if isinstance(expansions, str) else (expansions or "")
+    expansion_map = parse_expansion_param(expansion_value, direction, target_norm)
+    selected_node_fields = parse_field_selection(node_fields, NODE_FIELD_OPTIONS, DEFAULT_NODE_FIELDS)
+    selected_edge_fields = parse_field_selection(edge_fields, EDGE_FIELD_OPTIONS, DEFAULT_EDGE_FIELDS)
+
+    broadly_involved = set(expansion_map.keys())
+    if additional_asset_tags:
+        extra = normalize_tag_list(additional_asset_tags if isinstance(additional_asset_tags, str) else str(additional_asset_tags))
+        invalid = [t for t in extra if t not in ALL_KNOWN_TAGS_NORMALIZED]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid additional asset tags: {', '.join(canonical_display_tag(t) for t in invalid)}")
+        broadly_involved.update(extra)
+
+    candidate_cables = build_candidate_cables(expansion_map)
+
+    if cable_type:
+        candidate_cables = candidate_cables[candidate_cables["Type"].str.contains(cable_type, case=False, na=False)]
+    if protocol:
+        candidate_cables = candidate_cables[candidate_cables["Protocol"].str.contains(protocol, case=False, na=False)]
+    if hidden_cable_ids:
+        hidden_norm = {normalize_tag_value(t) for t in hidden_cable_ids.split(",") if t.strip()}
+        candidate_cables = candidate_cables[~candidate_cables["TagNorm"].isin(hidden_norm)]
+
+    if exclude_internal_routes:
+        candidate_cables = candidate_cables[
+            ~((candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"])
+              & candidate_cables["Type"].str.contains("route", case=False, na=False))
+        ]
+
+    is_logical = candidate_cables["Type"].str.contains("route", case=False, na=False)
+    is_self_route = (candidate_cables["SrcTagNorm"] == candidate_cables["DstTagNorm"]) & is_logical
+    effective_include_logical = include_logical_routes or bool(protocol) or (collapse_strategy or "none").lower() in ("protocol", "type")
+    if not effective_include_logical:
+        candidate_cables = candidate_cables[~is_logical | is_self_route]
+    if not include_physical_routes:
+        candidate_cables = candidate_cables[is_logical]
+    if not include_passthroughs:
+        candidate_cables = candidate_cables[~candidate_cables["Type"].str.contains("passthrough", case=False, na=False)]
+
+    visible_norm_set = set(normalize_tag_list(visible_asset_tags)) if visible_asset_tags else set()
+    if visible_norm_set:
+        filtered_cables = candidate_cables[
+            (candidate_cables["SrcTagNorm"].isin(visible_norm_set) | candidate_cables["SrcTagNorm"].isin(VALID_CABLE_IDS_NORMALIZED))
+            & (candidate_cables["DstTagNorm"].isin(visible_norm_set) | candidate_cables["DstTagNorm"].isin(VALID_CABLE_IDS_NORMALIZED))
+        ].copy()
+    else:
+        filtered_cables = candidate_cables.copy()
+
+    filtered_cables["SrcTag"] = filtered_cables["SrcTag"].apply(canonical_display_tag)
+    filtered_cables["DstTag"] = filtered_cables["DstTag"].apply(canonical_display_tag)
+
+    candidate_asset_nodes_norm = {t for t in set(filtered_cables["SrcTagNorm"]) | set(filtered_cables["DstTagNorm"]) if is_asset_tag(t)}
+    candidate_asset_nodes_norm.update({t for t in broadly_involved if is_asset_tag(t)})
+    if visible_norm_set:
+        final_asset_nodes_norm = candidate_asset_nodes_norm & visible_norm_set
+        final_asset_nodes_norm.update({t for t in expansion_map if is_asset_tag(t)})
+    else:
+        final_asset_nodes_norm = candidate_asset_nodes_norm
+    final_nodes_to_render = denormalize_tags(final_asset_nodes_norm)
+
+    if not final_nodes_to_render and filtered_cables.empty:
+        return {"nodes": [], "edges": [], "empty": True}
+
+    graph_assets = df_assets[df_assets["AssetTag"].isin(final_nodes_to_render)]
+    collapse_value = (collapse_strategy or "none").lower()
+    if collapse_value not in COLLAPSE_OPTIONS:
+        raise HTTPException(status_code=400, detail="Invalid collapse strategy. Choose none, protocol, or type.")
+
+    return compute_graph_elements(
+        filtered_cables, graph_assets, final_nodes_to_render,
+        selected_node_fields, selected_edge_fields,
+        color_nodes_by_category, color_edges_by_protocol, collapse_value,
+    )
+
+
 @app.get("/graphviz/dot")
 async def get_graphviz_dot(
     target_tag: Optional[str] = None,
