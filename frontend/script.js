@@ -791,13 +791,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function buildCytoscapeStyle() {
         return [
-            // Non-junction asset nodes: opaque background so edges cannot bleed through
+            // Non-junction asset nodes: opaque background + high z-index so edges
+            // passing through or behind the node are always hidden beneath it.
             {
                 selector: 'node[!is_junction]',
                 style: {
                     'shape': 'rectangle',
                     'background-color': 'data(bg_color)',
                     'background-opacity': 1,
+                    'z-index': 10,
                     'label': '',
                     'width': 'data(node_width)',
                     'height': 'data(node_height)',
@@ -838,15 +840,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
                     'curve-style': 'straight',
-                    // source-label places the text at the out-port end of each edge so
-                    // labels sit at their port's Y coordinate (22 px row spacing) rather
-                    // than all colliding at the same midpoint X column.
-                    'source-label': 'data(label)',
-                    'source-text-offset': 48,
-                    'source-text-rotation': 'autorotate',
+                    'z-index': 0,
+                    'label': 'data(label)',
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     'color': '#333',
+                    'text-rotation': 'autorotate',
+                    'text-margin-y': -8,
                     'text-wrap': 'none',
                     'text-background-color': '#fff',
                     'text-background-opacity': 0.85,
