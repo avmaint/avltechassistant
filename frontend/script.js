@@ -830,6 +830,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     'padding': '0px',
                 }
             },
+            // Invisible waypoint nodes used to route back-edges around node boundaries
+            {
+                selector: 'node[?is_phantom]',
+                style: {
+                    'width': 0,
+                    'height': 0,
+                    'border-width': 0,
+                    'background-opacity': 0,
+                    'label': '',
+                    'padding': '0px',
+                    'z-index': 1,
+                }
+            },
             {
                 selector: 'edge',
                 style: {
@@ -943,7 +956,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.one('layoutstop', function () {
             if (typeof cyInstance.nodeHtmlLabel === 'function') {
                 cyInstance.nodeHtmlLabel([{
-                    query: 'node[!is_junction]',
+                    query: 'node[!is_junction][!is_phantom]',
                     halign: 'center',
                     valign: 'center',
                     halignBox: 'center',
@@ -992,49 +1005,113 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
 
-            // Back-edges (target is left of source in LR layout) route below the nodes
-            // using unbundled-bezier with a single downward-arcing control point.
-            // For a right-to-left edge direction, a NEGATIVE control-point-distance puts
-            // the control point below the midline, arcing the edge under the node rows.
+            // Back-edges (target is left of source in the LR layout) cannot be routed
+            // around node boundaries using Cytoscape bezier control-point weights, because
+            // weights in [0,1] keep every control point within the source–target horizontal
+            // span (i.e. between the two node edges, not outside them).
+            //
+            // Solution: replace each back-edge with 4 invisible phantom waypoint nodes at
+            // the 4 orthogonal corners of the U-shape, plus 5 straight-line segment edges.
+            // All positions are computed in absolute canvas coordinates post-layout.
+            //
+            //   wp1  (srcRight+M, srcPortY) → exits right of source node at port Y
+            //   wp2  (srcRight+M, belowY)   → bottom-right corner
+            //   wp3  (tgtLeft-M,  belowY)   → bottom-left corner
+            //   wp4  (tgtLeft-M,  tgtPortY) → enters left of target node at port Y
+
+            function portAbsY(node, portId, portList) {
+                const nodeH = node.data('node_height') || 100;
+                const idx   = portList.indexOf(portId);
+                if (idx < 0) return node.position('y');
+                const yFromTop = nodeH / 2 - portList.length * PORT_ROW_H_EP / 2
+                               + idx * PORT_ROW_H_EP + PORT_ROW_H_EP / 2;
+                return node.position('y') - nodeH / 2 + yFromTop;
+            }
+
+            const backEdgesToRoute = [];
             cyInstance.edges().forEach(function (edge) {
-                const d = edge.data();
+                const d   = edge.data();
                 const src = cyInstance.getElementById(d.source);
                 const tgt = cyInstance.getElementById(d.target);
                 if (!src.length || !tgt.length) return;
                 if (src.data('is_junction') || tgt.data('is_junction')) return;
+                if (tgt.position('x') < src.position('x'))
+                    backEdgesToRoute.push({ edge, src, tgt, d });
+            });
 
-                if (tgt.position('x') < src.position('x')) {
-                    const nodeH = Math.max(
-                        src.data('node_height') || 100,
-                        tgt.data('node_height') || 100,
-                        100
-                    );
-                    const arc = Math.round(nodeH + 100);
-                    // Four control points create a proper U-shape that exits and enters
-                    // horizontally at each port, then routes clearly below both nodes.
-                    //
-                    // Weights are passed as a JS array (not a string) to avoid Cytoscape's
-                    // CSS parser rejecting negative values:
-                    //   CP1  w=-ext, d=0     → stub extending rightward past the source port
-                    //   CP2  w=+ext, d=-arc  → top of right arm, pulled straight down
-                    //   CP3  w=1-ext, d=-arc → top of left arm, pulled straight down
-                    //   CP4  w=1+ext, d=0    → stub extending leftward past the target port
-                    //
-                    // For an RTL edge Cytoscape's perpendicular direction is upward, so a
-                    // negative distance moves the control point downward.
-                    const ext = 0.08;
-                    edge.style({
-                        'curve-style': 'unbundled-bezier',
-                        'control-point-distances': [0, -arc, -arc, 0],
-                        'control-point-weights': [-ext, ext, 1 - ext, 1 + ext],
-                    });
+            const BACK_MARGIN = 50;
+            const BACK_BELOW  = 80;
+
+            backEdgesToRoute.forEach(function ({ edge, src, tgt, d }) {
+                const srcRight = src.position('x') + (src.data('node_width')  || 200) / 2;
+                const tgtLeft  = tgt.position('x') - (tgt.data('node_width')  || 200) / 2;
+                const belowY   = Math.max(
+                    src.position('y') + (src.data('node_height') || 100) / 2,
+                    tgt.position('y') + (tgt.data('node_height') || 100) / 2
+                ) + BACK_BELOW;
+
+                const outPorts = src.data('out_ports') || [];
+                const inPorts  = tgt.data('in_ports')  || [];
+                const srcPortY = portAbsY(src, d.src_port, outPorts);
+                const tgtPortY = portAbsY(tgt, d.dst_port, inPorts);
+
+                const eid = d.id;
+                const shared = {
+                    color:    d.color,
+                    cable_id: d.cable_id,
+                    src_port: d.src_port,
+                    dst_port: d.dst_port,
+                    protocol: d.protocol,
+                    type:     d.type,
+                };
+
+                edge.remove();
+
+                cyInstance.add([
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_1`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: srcPortY } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_2`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: belowY   } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_3`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: belowY   } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_4`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: tgtPortY } },
+                ]);
+
+                cyInstance.add([
+                    { group: 'edges', data: { id: `__bkseg__${eid}_1`, source: d.source,             target: `__bkwp__${eid}_1`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_2`, source: `__bkwp__${eid}_1`,  target: `__bkwp__${eid}_2`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_3`, source: `__bkwp__${eid}_2`,  target: `__bkwp__${eid}_3`, label: d.label || '', ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_4`, source: `__bkwp__${eid}_3`,  target: `__bkwp__${eid}_4`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_5`, source: `__bkwp__${eid}_4`,  target: d.target,            label: '',           ...shared } },
+                ]);
+
+                // Snap first segment's source to the out-port position on the right edge
+                const seg1 = cyInstance.getElementById(`__bkseg__${eid}_1`);
+                if (d.src_port) {
+                    const idx = outPorts.indexOf(d.src_port);
+                    if (idx >= 0)
+                        seg1.style('source-endpoint', '50% ' + portEndpointY(idx, outPorts.length, src.data('node_height')) + '%');
                 }
+
+                // Snap last segment's target to the in-port position on the left edge
+                const seg5 = cyInstance.getElementById(`__bkseg__${eid}_5`);
+                if (d.dst_port) {
+                    const idx = inPorts.indexOf(d.dst_port);
+                    if (idx >= 0)
+                        seg5.style('target-endpoint', '-50% ' + portEndpointY(idx, inPorts.length, tgt.data('node_height')) + '%');
+                }
+
+                // Arrow only on the final segment (pointing into the target port)
+                ['1', '2', '3', '4'].forEach(function (n) {
+                    cyInstance.getElementById(`__bkseg__${eid}_${n}`).style({
+                        'target-arrow-shape': 'none',
+                        'source-arrow-shape': 'none',
+                    });
+                });
+                seg5.style({ 'target-arrow-shape': 'triangle', 'source-arrow-shape': 'none' });
             });
         });
 
         cyInstance.on('tap', 'node', async function(evt) {
             const node = evt.target;
-            if (node.data('is_junction')) return;
+            if (node.data('is_junction') || node.data('is_phantom')) return;
             const tag = node.data('id');
 
             targetTagFilter.value = tag;
