@@ -836,7 +836,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     'target-arrow-shape': 'triangle',
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
-                    'curve-style': 'bezier',
+                    'curve-style': 'straight',
                     'label': 'data(label)',
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
