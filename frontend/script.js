@@ -794,7 +794,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Non-junction asset nodes: opaque background + high z-index so edges
             // passing through or behind the node are always hidden beneath it.
             {
-                selector: 'node[!is_junction]',
+                selector: 'node[!is_junction][!is_phantom]',
                 style: {
                     'shape': 'rectangle',
                     'background-color': 'data(bg_color)',
@@ -810,7 +810,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             },
             {
-                selector: 'node[!is_junction]:selected',
+                selector: 'node[!is_junction][!is_phantom]:selected',
                 style: {
                     'border-width': 3,
                     'border-color': '#0040aa',
@@ -1119,6 +1119,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 seg5.style({ 'target-arrow-shape': 'triangle', 'source-arrow-shape': 'none' });
             });
+
+            if (backEdgesToRoute.length > 0) cyInstance.fit(30);
         });
 
         cyInstance.on('tap', 'node', async function(evt) {
