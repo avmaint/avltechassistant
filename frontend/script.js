@@ -1010,17 +1010,23 @@ document.addEventListener("DOMContentLoaded", () => {
                         100
                     );
                     const arc = Math.round(nodeH + 100);
-                    // Three control points all at the same depth create a U-shape with
-                    // near-vertical arms and a flat bottom:
-                    //   weight 0.01 (near source) / dist -arc → pulls arm nearly straight down
-                    //   weight 0.50 (centre)      / dist -arc → flat bottom of the U
-                    //   weight 0.99 (near target)  / dist -arc → pulls arm nearly straight up
-                    // For an RTL edge, Cytoscape's perpendicular is upward, so negative
-                    // distance moves the control point downward.
+                    // Four control points create a proper U-shape that exits and enters
+                    // horizontally at each port, then routes clearly below both nodes.
+                    //
+                    // Weights are passed as a JS array (not a string) to avoid Cytoscape's
+                    // CSS parser rejecting negative values:
+                    //   CP1  w=-ext, d=0     → stub extending rightward past the source port
+                    //   CP2  w=+ext, d=-arc  → top of right arm, pulled straight down
+                    //   CP3  w=1-ext, d=-arc → top of left arm, pulled straight down
+                    //   CP4  w=1+ext, d=0    → stub extending leftward past the target port
+                    //
+                    // For an RTL edge Cytoscape's perpendicular direction is upward, so a
+                    // negative distance moves the control point downward.
+                    const ext = 0.08;
                     edge.style({
                         'curve-style': 'unbundled-bezier',
-                        'control-point-distances': (-arc) + ' ' + (-arc) + ' ' + (-arc),
-                        'control-point-weights': '0.01 0.5 0.99',
+                        'control-point-distances': [0, -arc, -arc, 0],
+                        'control-point-weights': [-ext, ext, 1 - ext, 1 + ext],
                     });
                 }
             });
