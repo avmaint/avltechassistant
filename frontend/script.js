@@ -1009,11 +1009,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         tgt.data('node_height') || 100,
                         100
                     );
-                    const arc = Math.round(nodeH / 2 + 120);
+                    const arc = Math.round(nodeH + 100);
+                    // Three control points create a wide U-shape:
+                    //   weight -0.12 / dist 0  → extends rightward past the source port
+                    //   weight  0.50 / dist -arc → deepest point below the nodes
+                    //   weight  1.12 / dist 0  → extends leftward past the target port
+                    // For an RTL edge, Cytoscape's perpendicular is upward, so a negative
+                    // distance moves the control point downward.
                     edge.style({
                         'curve-style': 'unbundled-bezier',
-                        'control-point-distances': String(-arc),
-                        'control-point-weights': '0.5',
+                        'control-point-distances': '0 ' + (-arc) + ' 0',
+                        'control-point-weights': '-0.12 0.5 1.12',
                     });
                 }
             });
