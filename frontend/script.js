@@ -837,16 +837,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
                     'curve-style': 'straight',
-                    'label': 'data(label)',
+                    // source-label places the text at the out-port end of each edge so
+                    // labels sit at their port's Y coordinate (22 px row spacing) rather
+                    // than all colliding at the same midpoint X column.
+                    'source-label': 'data(label)',
+                    'source-text-offset': 48,
+                    'source-text-rotation': 'autorotate',
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     'color': '#333',
-                    'text-rotation': 'autorotate',
-                    'text-margin-y': -8,
                     'text-wrap': 'wrap',
-                    'text-max-width': '120px',
+                    'text-max-width': '100px',
                     'text-background-color': '#fff',
-                    'text-background-opacity': 0.75,
+                    'text-background-opacity': 0.85,
                     'text-background-padding': '2px',
                 }
             },
