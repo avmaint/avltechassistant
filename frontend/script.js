@@ -839,10 +839,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     'target-arrow-shape': 'triangle',
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
-                    // 'segments' honours ELK bend-points as exact waypoints (not spline
-                    // handles), so back-edges route around nodes correctly while forward
-                    // edges with no bend-points still draw as straight lines.
-                    'curve-style': 'segments',
+                    'curve-style': 'straight',
                     'z-index': 0,
                     'label': 'data(label)',
                     'font-size': '9px',
@@ -992,6 +989,32 @@ document.addEventListener("DOMContentLoaded", () => {
                             edge.style('target-endpoint', '-50% ' + yPct + '%');
                         }
                     }
+                }
+            });
+
+            // Back-edges (target is left of source in LR layout) route below the nodes
+            // using unbundled-bezier with a single downward-arcing control point.
+            // For a right-to-left edge direction, a NEGATIVE control-point-distance puts
+            // the control point below the midline, arcing the edge under the node rows.
+            cyInstance.edges().forEach(function (edge) {
+                const d = edge.data();
+                const src = cyInstance.getElementById(d.source);
+                const tgt = cyInstance.getElementById(d.target);
+                if (!src.length || !tgt.length) return;
+                if (src.data('is_junction') || tgt.data('is_junction')) return;
+
+                if (tgt.position('x') < src.position('x')) {
+                    const nodeH = Math.max(
+                        src.data('node_height') || 100,
+                        tgt.data('node_height') || 100,
+                        100
+                    );
+                    const arc = Math.round(nodeH / 2 + 120);
+                    edge.style({
+                        'curve-style': 'unbundled-bezier',
+                        'control-point-distances': String(-arc),
+                        'control-point-weights': '0.5',
+                    });
                 }
             });
         });
