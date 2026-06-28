@@ -830,17 +830,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     'padding': '0px',
                 }
             },
-            // Invisible waypoint nodes used to route back-edges around node boundaries
+            // Invisible waypoint nodes used to route back-edges around node boundaries.
+            // Use 1x1 (not 0x0) so Cytoscape can compute valid edge-boundary intersections.
             {
                 selector: 'node[?is_phantom]',
                 style: {
-                    'width': 0,
-                    'height': 0,
+                    'width': 1,
+                    'height': 1,
                     'border-width': 0,
                     'background-opacity': 0,
                     'label': '',
                     'padding': '0px',
                     'z-index': 1,
+                    'events': 'no',
                 }
             },
             {
@@ -1038,6 +1040,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (tgt.position('x') < src.position('x'))
                     backEdgesToRoute.push({ edge, src, tgt, d });
             });
+            console.log('[backEdge] detected', backEdgesToRoute.length, 'back-edge(s)');
 
             const BACK_MARGIN = 50;
             const BACK_BELOW  = 80;
@@ -1056,6 +1059,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const tgtPortY = portAbsY(tgt, d.dst_port, inPorts);
 
                 const eid = d.id;
+                console.log('[backEdge] routing id=' + eid,
+                    '| src=' + d.source + ' x=' + src.position('x').toFixed(0),
+                    '| tgt=' + d.target + ' x=' + tgt.position('x').toFixed(0),
+                    '| srcRight=' + srcRight.toFixed(0), 'tgtLeft=' + tgtLeft.toFixed(0),
+                    '| srcPortY=' + srcPortY.toFixed(0), 'tgtPortY=' + tgtPortY.toFixed(0),
+                    '| belowY=' + belowY.toFixed(0));
+
                 const shared = {
                     color:    d.color,
                     cable_id: d.cable_id,
@@ -1067,20 +1077,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 edge.remove();
 
-                cyInstance.add([
+                const addedNodes = cyInstance.add([
                     { group: 'nodes', data: { id: `__bkwp__${eid}_1`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: srcPortY } },
                     { group: 'nodes', data: { id: `__bkwp__${eid}_2`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: belowY   } },
                     { group: 'nodes', data: { id: `__bkwp__${eid}_3`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: belowY   } },
                     { group: 'nodes', data: { id: `__bkwp__${eid}_4`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: tgtPortY } },
                 ]);
+                console.log('[backEdge] added', addedNodes.length, 'phantom nodes');
 
-                cyInstance.add([
+                const addedSegs = cyInstance.add([
                     { group: 'edges', data: { id: `__bkseg__${eid}_1`, source: d.source,             target: `__bkwp__${eid}_1`, label: '',           ...shared } },
                     { group: 'edges', data: { id: `__bkseg__${eid}_2`, source: `__bkwp__${eid}_1`,  target: `__bkwp__${eid}_2`, label: '',           ...shared } },
                     { group: 'edges', data: { id: `__bkseg__${eid}_3`, source: `__bkwp__${eid}_2`,  target: `__bkwp__${eid}_3`, label: d.label || '', ...shared } },
                     { group: 'edges', data: { id: `__bkseg__${eid}_4`, source: `__bkwp__${eid}_3`,  target: `__bkwp__${eid}_4`, label: '',           ...shared } },
                     { group: 'edges', data: { id: `__bkseg__${eid}_5`, source: `__bkwp__${eid}_4`,  target: d.target,            label: '',           ...shared } },
                 ]);
+                console.log('[backEdge] added', addedSegs.length, 'segment edges');
 
                 // Snap first segment's source to the out-port position on the right edge
                 const seg1 = cyInstance.getElementById(`__bkseg__${eid}_1`);
