@@ -2369,30 +2369,94 @@ def compute_graph_elements(
     CENTER_ROW_H = 18
     V_PAD        = 16
 
-    # Pass 1: build natural-sorted in_ports for every non-junction node so the
-    # barycenter heuristic below can look up each in-port's rank.
-    in_ports_by_node: Dict[str, List[str]] = {}
-    for node_tag in all_nodes:
-        if not is_junction_node_id(node_tag):
-            raw_dst = node_ports.get(node_tag, {"dst": {}}).get("dst", {})
-            in_ports_by_node[node_tag] = sorted(raw_dst.values(), key=_natural_key)
+    # --- Bidirectional barycenter port ordering (Sugiyama-style) ---
+    # Pre-build junction hop maps so barycenter looks through cable-splice nodes
+    # to reach the real asset endpoint on either side.
+    _junc_fwd: Dict[str, List[Tuple[str, str]]] = {}  # junction -> [(real_dst, dst_port)]
+    _junc_bwd: Dict[str, List[Tuple[str, str]]] = {}  # junction -> [(real_src, src_port)]
+    for _e in graph_edges:
+        _sn, _sp = str(_e["src_node"]), str(_e["src_port"])
+        _dn, _dp = str(_e["dst_node"]), str(_e["dst_port"])
+        if is_junction_node_id(_dn) and not is_junction_node_id(_sn):
+            _junc_bwd.setdefault(_dn, []).append((_sn, _sp))
+        if is_junction_node_id(_sn) and not is_junction_node_id(_dn):
+            _junc_fwd.setdefault(_sn, []).append((_dn, _dp))
 
-    # (dst_node, dst_port_label) -> vertical rank among that node's in-ports
-    in_port_rank: Dict[Tuple[str, str], int] = {}
-    for node_tag, ports_list in in_ports_by_node.items():
-        for rank, lbl in enumerate(ports_list):
-            in_port_rank[(node_tag, lbl)] = rank
+    def _make_rank_map(ports_by_node: Dict[str, List[str]]) -> Dict[Tuple[str, str], int]:
+        return {(node, lbl): i for node, lst in ports_by_node.items() for i, lbl in enumerate(lst)}
 
-    def _barycenter(src_node: str, port_label: str) -> float:
-        """Average rank of the in-ports this out-port connects to (minimises crossings)."""
-        ranks = [
-            in_port_rank[(str(e["dst_node"]), str(e["dst_port"]))]
-            for e in graph_edges
-            if str(e["src_node"]) == src_node
-            and str(e["src_port"]) == port_label
-            and (str(e["dst_node"]), str(e["dst_port"])) in in_port_rank
-        ]
+    def _fwd_bary(node: str, lbl: str, in_rank: Dict) -> float:
+        """Out-port barycenter: avg in-port rank of connected neighbours (junction-transparent)."""
+        ranks = []
+        for e in graph_edges:
+            if str(e["src_node"]) != node or str(e["src_port"]) != lbl:
+                continue
+            dn, dp = str(e["dst_node"]), str(e["dst_port"])
+            if is_junction_node_id(dn):
+                for rdn, rdp in _junc_fwd.get(dn, []):
+                    if (rdn, rdp) in in_rank:
+                        ranks.append(in_rank[(rdn, rdp)])
+            elif (dn, dp) in in_rank:
+                ranks.append(in_rank[(dn, dp)])
         return sum(ranks) / len(ranks) if ranks else float("inf")
+
+    def _bwd_bary(node: str, lbl: str, out_rank: Dict) -> float:
+        """In-port barycenter: avg out-port rank of feeding neighbours (junction-transparent)."""
+        ranks = []
+        for e in graph_edges:
+            if str(e["dst_node"]) != node or str(e["dst_port"]) != lbl:
+                continue
+            sn, sp = str(e["src_node"]), str(e["src_port"])
+            if is_junction_node_id(sn):
+                for rsn, rsp in _junc_bwd.get(sn, []):
+                    if (rsn, rsp) in out_rank:
+                        ranks.append(out_rank[(rsn, rsp)])
+            elif (sn, sp) in out_rank:
+                ranks.append(out_rank[(sn, sp)])
+        return sum(ranks) / len(ranks) if ranks else float("inf")
+
+    non_junc_nodes = [n for n in all_nodes if not is_junction_node_id(n)]
+
+    # Seed both sides with natural sort
+    in_ports_by_node: Dict[str, List[str]] = {
+        n: sorted(node_ports.get(n, {"dst": {}})["dst"].values(), key=_natural_key)
+        for n in non_junc_nodes
+    }
+    out_ports_by_node: Dict[str, List[str]] = {
+        n: sorted(node_ports.get(n, {"src": {}})["src"].values(), key=_natural_key)
+        for n in non_junc_nodes
+    }
+
+    # Two bidirectional sweeps: each forward pass tightens out-ports using the current
+    # in-port ranks; each backward pass tightens in-ports using the new out-port ranks.
+    for _ in range(2):
+        in_rank = _make_rank_map(in_ports_by_node)
+        out_ports_by_node = {
+            n: sorted(
+                node_ports.get(n, {"src": {}})["src"].values(),
+                key=lambda lbl, n=n: (_fwd_bary(n, lbl, in_rank), _natural_key(lbl)),
+            )
+            for n in non_junc_nodes
+        }
+        out_rank = _make_rank_map(out_ports_by_node)
+        in_ports_by_node = {
+            n: sorted(
+                node_ports.get(n, {"dst": {}})["dst"].values(),
+                key=lambda lbl, n=n: (_bwd_bary(n, lbl, out_rank), _natural_key(lbl)),
+            )
+            for n in non_junc_nodes
+        }
+
+    # Final forward sweep using the converged in-port order
+    in_rank = _make_rank_map(in_ports_by_node)
+    out_ports_by_node = {
+        n: sorted(
+            node_ports.get(n, {"src": {}})["src"].values(),
+            key=lambda lbl, n=n: (_fwd_bary(n, lbl, in_rank), _natural_key(lbl)),
+        )
+        for n in non_junc_nodes
+    }
+    # --- end port ordering ---
 
     cy_nodes: List[Dict] = []
     for node_tag in sorted(all_nodes):
@@ -2417,13 +2481,8 @@ def compute_graph_elements(
             if val:
                 fields[field_key] = val
 
-        ports = node_ports.get(node_tag, {"src": {}, "dst": {}})
         in_ports  = in_ports_by_node.get(node_tag, [])
-        # Sort out-ports by barycenter (avg rank of connected in-ports), break ties with natural sort.
-        out_ports = sorted(
-            ports["src"].values(),
-            key=lambda lbl: (_barycenter(node_tag, lbl), _natural_key(lbl)),
-        )
+        out_ports = out_ports_by_node.get(node_tag, [])
 
         has_ports = bool(in_ports or out_ports)
         node_width = CENTER_W + (PORT_COL_W * 2 if has_ports else 0)
