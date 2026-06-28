@@ -839,7 +839,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     'target-arrow-shape': 'triangle',
                     'source-arrow-color': 'data(color)',
                     'source-arrow-shape': 'none',
-                    'curve-style': 'straight',
+                    // 'segments' honours ELK bend-points as exact waypoints (not spline
+                    // handles), so back-edges route around nodes correctly while forward
+                    // edges with no bend-points still draw as straight lines.
+                    'curve-style': 'segments',
                     'z-index': 0,
                     'label': 'data(label)',
                     'font-size': '9px',
