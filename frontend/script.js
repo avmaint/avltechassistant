@@ -847,7 +847,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     'color': '#333',
                     'text-rotation': 'autorotate',
                     'text-margin-y': -8,
-                    'text-wrap': 'none',
+                    'text-wrap': 'ellipsis',
+                    'text-max-width': '200px',
                     'text-background-color': '#fff',
                     'text-background-opacity': 0.85,
                     'text-background-padding': '2px',
@@ -910,7 +911,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 elk: {
                     algorithm: 'layered',
                     'elk.direction': 'RIGHT',
-                    'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+                    'elk.layered.spacing.nodeNodeBetweenLayers': '260',
                     'elk.spacing.nodeNode': '60',
                     // Crossing minimisation: LAYER_SWEEP with TWO_SIDED greedy switching
                     // is the most thorough option short of an ILP solver.
