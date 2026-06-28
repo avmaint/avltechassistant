@@ -2555,7 +2555,7 @@ def compute_graph_elements(
             edge_id = cable_id or f"{edge['src_node']}::{edge['dst_node']}"
             edge_data = {
                 "id": edge_id, "source": edge["src_node"], "target": edge["dst_node"],
-                "label": "\n".join(label_parts),
+                "label": " │ ".join(label_parts),
                 "color": color, "bidirectional": is_pt, "collapsed": False,
                 "cable_id": cable_id,
                 "src_port": edge["src_port"] or "", "dst_port": edge["dst_port"] or "",

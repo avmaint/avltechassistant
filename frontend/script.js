@@ -791,12 +791,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function buildCytoscapeStyle() {
         return [
-            // Non-junction asset nodes: transparent background — HTML overlay provides visuals
+            // Non-junction asset nodes: opaque background so edges cannot bleed through
             {
                 selector: 'node[!is_junction]',
                 style: {
                     'shape': 'rectangle',
-                    'background-opacity': 0,
+                    'background-color': 'data(bg_color)',
+                    'background-opacity': 1,
                     'label': '',
                     'width': 'data(node_width)',
                     'height': 'data(node_height)',
@@ -846,8 +847,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     'font-size': '9px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     'color': '#333',
-                    'text-wrap': 'wrap',
-                    'text-max-width': '100px',
+                    'text-wrap': 'none',
                     'text-background-color': '#fff',
                     'text-background-opacity': 0.85,
                     'text-background-padding': '2px',
