@@ -1040,32 +1040,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (tgt.position('x') < src.position('x'))
                     backEdgesToRoute.push({ edge, src, tgt, d });
             });
-            console.log('[backEdge] detected', backEdgesToRoute.length, 'back-edge(s)');
 
-            const BACK_MARGIN = 50;
-            const BACK_BELOW  = 80;
+            const BACK_MARGIN  = 50;
+            const BACK_BELOW   = 80;
+            const LANE_SPACING = PORT_ROW_H_EP; // 22px — matches port grid
 
-            backEdgesToRoute.forEach(function ({ edge, src, tgt, d }) {
-                const srcRight = src.position('x') + (src.data('node_width')  || 200) / 2;
-                const tgtLeft  = tgt.position('x') - (tgt.data('node_width')  || 200) / 2;
-                const belowY   = Math.max(
-                    src.position('y') + (src.data('node_height') || 100) / 2,
-                    tgt.position('y') + (tgt.data('node_height') || 100) / 2
-                ) + BACK_BELOW;
+            // Pre-compute each edge's source port Y so we can sort and assign lanes.
+            // Sorting top→bottom gives innermost U to the top-most source port,
+            // which keeps the nested U-shapes from crossing each other.
+            backEdgesToRoute.forEach(function (be) {
+                const outPorts = be.src.data('out_ports') || [];
+                be.srcPortY    = portAbsY(be.src, be.d.src_port, outPorts);
+                be.inPorts     = be.tgt.data('in_ports') || [];
+                be.tgtPortY    = portAbsY(be.tgt, be.d.dst_port, be.inPorts);
+                be.outPorts    = outPorts;
+                be.srcRight    = be.src.position('x') + (be.src.data('node_width')  || 200) / 2;
+                be.tgtLeft     = be.tgt.position('x') - (be.tgt.data('node_width')  || 200) / 2;
+            });
+            backEdgesToRoute.sort((a, b) => a.srcPortY - b.srcPortY);
 
-                const outPorts = src.data('out_ports') || [];
-                const inPorts  = tgt.data('in_ports')  || [];
-                const srcPortY = portAbsY(src, d.src_port, outPorts);
-                const tgtPortY = portAbsY(tgt, d.dst_port, inPorts);
+            // Global base — innermost lane must clear ALL source/target node bottoms.
+            const baseBelow = backEdgesToRoute.reduce(function (maxY, be) {
+                return Math.max(
+                    maxY,
+                    be.src.position('y') + (be.src.data('node_height') || 100) / 2,
+                    be.tgt.position('y') + (be.tgt.data('node_height') || 100) / 2
+                );
+            }, -Infinity) + BACK_BELOW;
 
-                const eid = d.id;
-                console.log('[backEdge] routing id=' + eid,
-                    '| src=' + d.source + ' x=' + src.position('x').toFixed(0),
-                    '| tgt=' + d.target + ' x=' + tgt.position('x').toFixed(0),
-                    '| srcRight=' + srcRight.toFixed(0), 'tgtLeft=' + tgtLeft.toFixed(0),
-                    '| srcPortY=' + srcPortY.toFixed(0), 'tgtPortY=' + tgtPortY.toFixed(0),
-                    '| belowY=' + belowY.toFixed(0));
+            backEdgesToRoute.forEach(function ({ edge, src, tgt, d, srcPortY, tgtPortY, outPorts, inPorts, srcRight, tgtLeft }, laneIndex) {
+                const laneOff = laneIndex * LANE_SPACING;
+                const rightX  = srcRight + BACK_MARGIN + laneOff;
+                const leftX   = tgtLeft  - BACK_MARGIN - laneOff;
+                const belowY  = baseBelow              + laneOff;
 
+                const eid    = d.id;
                 const shared = {
                     color:    d.color,
                     cable_id: d.cable_id,
@@ -1077,24 +1086,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 edge.remove();
 
-                const addedNodes = cyInstance.add([
-                    { group: 'nodes', data: { id: `__bkwp__${eid}_1`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: srcPortY } },
-                    { group: 'nodes', data: { id: `__bkwp__${eid}_2`, is_phantom: true }, position: { x: srcRight + BACK_MARGIN, y: belowY   } },
-                    { group: 'nodes', data: { id: `__bkwp__${eid}_3`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: belowY   } },
-                    { group: 'nodes', data: { id: `__bkwp__${eid}_4`, is_phantom: true }, position: { x: tgtLeft  - BACK_MARGIN, y: tgtPortY } },
+                cyInstance.add([
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_1`, is_phantom: true }, position: { x: rightX, y: srcPortY } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_2`, is_phantom: true }, position: { x: rightX, y: belowY   } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_3`, is_phantom: true }, position: { x: leftX,  y: belowY   } },
+                    { group: 'nodes', data: { id: `__bkwp__${eid}_4`, is_phantom: true }, position: { x: leftX,  y: tgtPortY } },
                 ]);
-                console.log('[backEdge] added', addedNodes.length, 'phantom nodes');
 
-                const addedSegs = cyInstance.add([
-                    { group: 'edges', data: { id: `__bkseg__${eid}_1`, source: d.source,             target: `__bkwp__${eid}_1`, label: '',           ...shared } },
-                    { group: 'edges', data: { id: `__bkseg__${eid}_2`, source: `__bkwp__${eid}_1`,  target: `__bkwp__${eid}_2`, label: '',           ...shared } },
-                    { group: 'edges', data: { id: `__bkseg__${eid}_3`, source: `__bkwp__${eid}_2`,  target: `__bkwp__${eid}_3`, label: d.label || '', ...shared } },
-                    { group: 'edges', data: { id: `__bkseg__${eid}_4`, source: `__bkwp__${eid}_3`,  target: `__bkwp__${eid}_4`, label: '',           ...shared } },
-                    { group: 'edges', data: { id: `__bkseg__${eid}_5`, source: `__bkwp__${eid}_4`,  target: d.target,            label: '',           ...shared } },
+                cyInstance.add([
+                    { group: 'edges', data: { id: `__bkseg__${eid}_1`, source: d.source,            target: `__bkwp__${eid}_1`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_2`, source: `__bkwp__${eid}_1`, target: `__bkwp__${eid}_2`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_3`, source: `__bkwp__${eid}_2`, target: `__bkwp__${eid}_3`, label: d.label || '', ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_4`, source: `__bkwp__${eid}_3`, target: `__bkwp__${eid}_4`, label: '',           ...shared } },
+                    { group: 'edges', data: { id: `__bkseg__${eid}_5`, source: `__bkwp__${eid}_4`, target: d.target,           label: '',           ...shared } },
                 ]);
-                console.log('[backEdge] added', addedSegs.length, 'segment edges');
 
-                // Snap first segment's source to the out-port position on the right edge
+                // Snap first segment's source to the out-port on the right edge
                 const seg1 = cyInstance.getElementById(`__bkseg__${eid}_1`);
                 if (d.src_port) {
                     const idx = outPorts.indexOf(d.src_port);
@@ -1102,7 +1109,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         seg1.style('source-endpoint', '50% ' + portEndpointY(idx, outPorts.length, src.data('node_height')) + '%');
                 }
 
-                // Snap last segment's target to the in-port position on the left edge
+                // Snap last segment's target to the in-port on the left edge
                 const seg5 = cyInstance.getElementById(`__bkseg__${eid}_5`);
                 if (d.dst_port) {
                     const idx = inPorts.indexOf(d.dst_port);
@@ -1110,7 +1117,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         seg5.style('target-endpoint', '-50% ' + portEndpointY(idx, inPorts.length, tgt.data('node_height')) + '%');
                 }
 
-                // Arrow only on the final segment (pointing into the target port)
+                // Arrow only on the final segment
                 ['1', '2', '3', '4'].forEach(function (n) {
                     cyInstance.getElementById(`__bkseg__${eid}_${n}`).style({
                         'target-arrow-shape': 'none',
