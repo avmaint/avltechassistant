@@ -1290,6 +1290,38 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Diagram expand / fullscreen toggle
+    (function () {
+        const btn  = document.getElementById('diagramExpandBtn');
+        const wrap = btn && btn.closest('.diagram-canvas-wrap');
+        if (!btn || !wrap) return;
+
+        const ICON_EXPAND = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14"><path d="M0 0v5h1.5V1.5H5V0H0zm9 0v1.5h3.5V5H14V0H9zM0 9v5h5v-1.5H1.5V9H0zm12.5 3.5H9V14h5V9h-1.5v3.5z" fill="currentColor"/></svg>`;
+        const ICON_RESTORE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14"><path d="M5 0H3.5v3.5H0V5h5V0zm4 0v5h5V3.5H9.5V0H9zM0 9v1.5h3.5V14H5V9H0zm9 0v5h1.5V10.5H14V9H9z" fill="currentColor"/></svg>`;
+        btn.innerHTML = ICON_EXPAND;
+
+        function setExpanded(on) {
+            wrap.classList.toggle('diagram-fullscreen', on);
+            btn.innerHTML   = on ? ICON_RESTORE : ICON_EXPAND;
+            btn.title       = on ? 'Restore diagram' : 'Expand to full window';
+            btn.setAttribute('aria-label', on ? 'Restore diagram' : 'Expand diagram');
+            if (cyInstance) {
+                cyInstance.resize();
+                if (on) cyInstance.fit(30);
+            }
+        }
+
+        btn.addEventListener('click', function () {
+            setExpanded(!wrap.classList.contains('diagram-fullscreen'));
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && wrap.classList.contains('diagram-fullscreen')) {
+                setExpanded(false);
+            }
+        });
+    }());
+
     // Add Enter key support for diagram viewer inputs
     [targetTagFilter, cableTypeFilter, protocolFilter].forEach(input => {
         if (input) {

@@ -183,6 +183,45 @@ button:hover {
     display: block;
 }
 
+/* ── Diagram expand / fullscreen ─────────────────────────────────────────── */
+.diagram-canvas-wrap {
+    position: relative;
+}
+
+.diagram-expand-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 20;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.65;
+    transition: opacity 0.15s;
+}
+.diagram-expand-btn:hover { opacity: 1; }
+
+.diagram-canvas-wrap.diagram-fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9000;
+    background: #fafbfc;
+}
+.diagram-canvas-wrap.diagram-fullscreen .diagram-canvas {
+    height: 100% !important;
+    border: none;
+    border-radius: 0;
+}
+
 /* ── Cytoscape node HTML overlay ─────────────────────────────────────────── */
 .cy-node-html {
     display: flex;
@@ -616,6 +655,8 @@ details[open] .diagram-options-summary::before {
         background: #fff;
         color: #000;
     }
+    .diagram-expand-btn { display: none !important; }
+
     .top-actions,
     .search-section,
     .filter-section,

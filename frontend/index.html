@@ -219,7 +219,10 @@
                 </details>
 
                 <div id="diagramStatus" class="status-message hidden"></div>
-                <div id="diagramRenderArea" class="diagram-canvas"></div>
+                <div class="diagram-canvas-wrap">
+                    <div id="diagramRenderArea" class="diagram-canvas"></div>
+                    <button id="diagramExpandBtn" class="diagram-expand-btn" title="Expand to full window" aria-label="Expand diagram"></button>
+                </div>
                 <div class="diagram-export-bar">
                     <button id="exportSvgBtn" class="secondary-btn">
                         Export SVG
