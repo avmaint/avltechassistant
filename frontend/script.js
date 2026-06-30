@@ -956,6 +956,59 @@ document.addEventListener("DOMContentLoaded", () => {
         // those attachment points using the exact port x/y coordinates from node data,
         // which were computed in the backend to match the HTML overlay port row positions.
         cyInstance.one('layoutstop', function () {
+            // Reorder out_ports / in_ports on each real node so that ports whose
+            // edges connect to higher targets (smaller Y) sort higher in the port
+            // list.  This minimises straight-edge crossings without moving nodes.
+            // Must run before nodeHtmlLabel (which renders the port rows) and
+            // before endpoint-snapping (which indexes ports by position).
+            (function sortPortsByTargetY() {
+                const outTargetYs = {};
+                const inSourceYs  = {};
+
+                cyInstance.edges().forEach(function (edge) {
+                    const d   = edge.data();
+                    const src = cyInstance.getElementById(d.source);
+                    const tgt = cyInstance.getElementById(d.target);
+                    if (!src.length || !tgt.length) return;
+                    if (src.data('is_phantom') || tgt.data('is_phantom')) return;
+
+                    if (d.src_port) {
+                        if (!outTargetYs[d.source]) outTargetYs[d.source] = {};
+                        const b = outTargetYs[d.source];
+                        if (!b[d.src_port]) b[d.src_port] = [];
+                        b[d.src_port].push(tgt.position('y'));
+                    }
+                    if (d.dst_port) {
+                        if (!inSourceYs[d.target]) inSourceYs[d.target] = {};
+                        const b = inSourceYs[d.target];
+                        if (!b[d.dst_port]) b[d.dst_port] = [];
+                        b[d.dst_port].push(src.position('y'));
+                    }
+                });
+
+                function avgY(arr) {
+                    return arr && arr.length
+                        ? arr.reduce((s, v) => s + v, 0) / arr.length
+                        : Infinity;
+                }
+
+                cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+                    const id = node.id();
+
+                    const out = node.data('out_ports');
+                    if (out && out.length > 1) {
+                        const m = outTargetYs[id] || {};
+                        node.data('out_ports', [...out].sort((a, b) => avgY(m[a]) - avgY(m[b])));
+                    }
+
+                    const inp = node.data('in_ports');
+                    if (inp && inp.length > 1) {
+                        const m = inSourceYs[id] || {};
+                        node.data('in_ports', [...inp].sort((a, b) => avgY(m[a]) - avgY(m[b])));
+                    }
+                });
+            }());
+
             if (typeof cyInstance.nodeHtmlLabel === 'function') {
                 cyInstance.nodeHtmlLabel([{
                     query: 'node[!is_junction][!is_phantom]',
