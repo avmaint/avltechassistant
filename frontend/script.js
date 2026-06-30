@@ -961,7 +961,29 @@ document.addEventListener("DOMContentLoaded", () => {
             // list.  This minimises straight-edge crossings without moving nodes.
             // Must run before nodeHtmlLabel (which renders the port rows) and
             // before endpoint-snapping (which indexes ports by position).
+            //
+            // Uses actual port Y (not node centre) as the sort key so that tall
+            // nodes with many ports are handled correctly.  All Y values are
+            // computed from a pre-sort snapshot so the ordering of one node does
+            // not affect another node's sort key mid-pass.
             (function sortPortsByTargetY() {
+                const ROW_H = 22;
+                function portY(node, portId, portList) {
+                    const nodeH   = node.data('node_height') || 100;
+                    const idx     = portList.indexOf(portId);
+                    if (idx < 0) return node.position('y');
+                    const yFromTop = nodeH / 2 - portList.length * ROW_H / 2
+                                   + idx * ROW_H + ROW_H / 2;
+                    return node.position('y') - nodeH / 2 + yFromTop;
+                }
+
+                // Snapshot port lists before any mutation.
+                const origOut = {}, origIn = {};
+                cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+                    origOut[node.id()] = node.data('out_ports') || [];
+                    origIn[node.id()]  = node.data('in_ports')  || [];
+                });
+
                 const outTargetYs = {};
                 const inSourceYs  = {};
 
@@ -971,18 +993,27 @@ document.addEventListener("DOMContentLoaded", () => {
                     const tgt = cyInstance.getElementById(d.target);
                     if (!src.length || !tgt.length) return;
                     if (src.data('is_phantom') || tgt.data('is_phantom')) return;
+                    if (src.data('is_junction') || tgt.data('is_junction')) return;
 
                     if (d.src_port) {
+                        // Sort src's out_ports by the actual Y of the dest port on tgt
+                        const tY = d.dst_port
+                            ? portY(tgt, d.dst_port, origIn[tgt.id()] || [])
+                            : tgt.position('y');
                         if (!outTargetYs[d.source]) outTargetYs[d.source] = {};
                         const b = outTargetYs[d.source];
                         if (!b[d.src_port]) b[d.src_port] = [];
-                        b[d.src_port].push(tgt.position('y'));
+                        b[d.src_port].push(tY);
                     }
                     if (d.dst_port) {
+                        // Sort tgt's in_ports by the actual Y of the source port on src
+                        const sY = d.src_port
+                            ? portY(src, d.src_port, origOut[src.id()] || [])
+                            : src.position('y');
                         if (!inSourceYs[d.target]) inSourceYs[d.target] = {};
                         const b = inSourceYs[d.target];
                         if (!b[d.dst_port]) b[d.dst_port] = [];
-                        b[d.dst_port].push(src.position('y'));
+                        b[d.dst_port].push(sY);
                     }
                 });
 
@@ -995,13 +1026,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
                     const id = node.id();
 
-                    const out = node.data('out_ports');
+                    const out = origOut[id];
                     if (out && out.length > 1) {
                         const m = outTargetYs[id] || {};
                         node.data('out_ports', [...out].sort((a, b) => avgY(m[a]) - avgY(m[b])));
                     }
 
-                    const inp = node.data('in_ports');
+                    const inp = origIn[id];
                     if (inp && inp.length > 1) {
                         const m = inSourceYs[id] || {};
                         node.data('in_ports', [...inp].sort((a, b) => avgY(m[a]) - avgY(m[b])));
