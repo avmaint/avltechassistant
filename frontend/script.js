@@ -1057,7 +1057,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 be.srcRight    = be.src.position('x') + (be.src.data('node_width')  || 200) / 2;
                 be.tgtLeft     = be.tgt.position('x') - (be.tgt.data('node_width')  || 200) / 2;
             });
-            backEdgesToRoute.sort((a, b) => a.srcPortY - b.srcPortY);
+            backEdgesToRoute.sort((a, b) => b.srcPortY - a.srcPortY);
 
             // Global base — innermost lane must clear ALL source/target node bottoms.
             const baseBelow = backEdgesToRoute.reduce(function (maxY, be) {
