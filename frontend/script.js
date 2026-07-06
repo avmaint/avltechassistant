@@ -1265,28 +1265,63 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });
     }
 
-    if (exportSvgBtn) {
-        exportSvgBtn.addEventListener("click", () => {
-            if (!cyInstance) { alert("No diagram to export. Please load a diagram first."); return; }
-            const svgStr = cyInstance.svg({ full: true, bg: '#ffffff' });
-            const blob = new Blob([svgStr], { type: "image/svg+xml" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `diagram-${baseTargetTag || "export"}.svg`;
-            a.click();
-            URL.revokeObjectURL(url);
+    // Shared capture helper: fits the graph, waits one animation frame, then
+    // uses html2canvas to rasterize the full render area (canvas + HTML label
+    // overlays).  Returns a Promise<HTMLCanvasElement>.
+    function captureDiagramCanvas() {
+        if (!cyInstance) return Promise.reject(new Error('No diagram loaded.'));
+        if (typeof html2canvas !== 'function') {
+            return Promise.reject(new Error('html2canvas not loaded.'));
+        }
+        cyInstance.fit(30);
+        return new Promise(function (resolve) {
+            requestAnimationFrame(function () {
+                const el = document.getElementById('diagramRenderArea');
+                html2canvas(el, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    logging: false,
+                    useCORS: true,
+                }).then(resolve);
+            });
         });
     }
 
     if (exportPngBtn) {
-        exportPngBtn.addEventListener("click", () => {
-            if (!cyInstance) { alert("No diagram to export. Please load a diagram first."); return; }
-            const dataUrl = cyInstance.png({ output: 'base64uri', full: true, scale: 2, bg: '#ffffff' });
-            const a = document.createElement("a");
-            a.href = dataUrl;
-            a.download = `diagram-${baseTargetTag || "export"}.png`;
-            a.click();
+        exportPngBtn.addEventListener("click", function () {
+            captureDiagramCanvas().then(function (canvas) {
+                canvas.toBlob(function (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `diagram-${baseTargetTag || 'export'}.png`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+            }).catch(function (err) { alert(err.message); });
+        });
+    }
+
+    if (exportSvgBtn) {
+        exportSvgBtn.addEventListener("click", function () {
+            // Capture the visible diagram (canvas + HTML overlays) as a PNG,
+            // then wrap it in a minimal SVG so the file has an .svg extension
+            // and opens in SVG-aware tools.  A foreignObject-based vector SVG
+            // would require inlining all CSS; this approach is simpler and
+            // produces a pixel-perfect result.
+            captureDiagramCanvas().then(function (canvas) {
+                const w   = canvas.width;
+                const h   = canvas.height;
+                const png = canvas.toDataURL('image/png');
+                const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image href="${png}" x="0" y="0" width="${w}" height="${h}"/></svg>`;
+                const blob = new Blob([svg], { type: 'image/svg+xml' });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement('a');
+                a.href     = url;
+                a.download = `diagram-${baseTargetTag || 'export'}.svg`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }).catch(function (err) { alert(err.message); });
         });
     }
 
