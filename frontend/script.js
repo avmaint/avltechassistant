@@ -1274,8 +1274,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function generateDiagramSvg() {
         if (!cyInstance) return null;
 
+        // ── Strategy: use cy.svg() for the structural base (colored boxes +
+        //   edges) then inject <text> elements using raw model coordinates.
+        //   cy.svg() preserves the model coordinate system in its viewBox, so
+        //   model position (px, py) can be used directly in injected elements.
         const PORT_ROW_H = 22;
-        const PAD        = 40;
         const PORT_FS    = 9;
         const TAG_FS     = 10;
 
@@ -1284,18 +1287,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
-
-        // Use only real nodes for bounding box so phantom waypoints don't inflate it.
-        const realNodes = cyInstance.nodes('[!is_phantom]');
-        const bb = realNodes.length ? realNodes.boundingBox() : cyInstance.elements().boundingBox();
-        if (!isFinite(bb.x1)) return null;
-        const W  = Math.ceil(bb.w + 2 * PAD);
-        const H  = Math.ceil(bb.h + 2 * PAD);
-        const ox = -bb.x1 + PAD;
-        const oy = -bb.y1 + PAD;
-
-        function fx(x) { return (x + ox).toFixed(1); }
-        function fy(y) { return (y + oy).toFixed(1); }
+        function f(n) { return n.toFixed(2); }
 
         function portAbsY(pos, nodeH, idx, count) {
             const yFromTop = nodeH / 2 - count * PORT_ROW_H / 2
@@ -1303,100 +1295,45 @@ document.addEventListener("DOMContentLoaded", () => {
             return pos.y - nodeH / 2 + yFromTop;
         }
 
-        function edgePt(nodeId, isSrc, portId) {
-            const n = cyInstance.getElementById(nodeId);
-            if (!n.length) return null;
-            const pos = n.position();
-            if (n.data('is_phantom') || n.data('is_junction')) return pos;
-            const nw   = n.data('node_width')  || 200;
-            const nh   = n.data('node_height') || 100;
-            const list = isSrc ? (n.data('out_ports') || []) : (n.data('in_ports') || []);
-            const idx  = list.indexOf(portId);
-            const py   = idx >= 0 ? portAbsY(pos, nh, idx, list.length) : pos.y;
-            return { x: pos.x + (isSrc ? nw / 2 : -nw / 2), y: py };
+        // ── Get base SVG from cytoscape-svg plugin ─────────────────────────
+        let baseSvg = '';
+        try {
+            baseSvg = cyInstance.svg({ full: true, bg: '#ffffff' }) || '';
+        } catch (e) {
+            console.warn('[SVG export] cy.svg() failed:', e);
         }
+        console.log('[SVG export] baseSvg header:', baseSvg.slice(0, 400));
 
-        const defsLines  = [];
-        const edgeLines  = [];
-        const dotLines   = [];
-        const nodeLines  = [];
-        const seenMarker = {};
+        // ── Build text injections ──────────────────────────────────────────
+        const textLines = [];
+        const realNodes = cyInstance.nodes('[!is_junction][!is_phantom]');
 
-        // ── Edges ──────────────────────────────────────────────────────────
-        cyInstance.edges().forEach(function (edge) {
-            const d   = edge.data();
-            const src = edgePt(d.source, true,  d.src_port);
-            const tgt = edgePt(d.target, false, d.dst_port);
-            if (!src || !tgt) return;
-
-            const color    = xe(d.color || '#666666');
-            const tgtNode  = cyInstance.getElementById(d.target);
-            const hasArrow = tgtNode.length && !tgtNode.data('is_phantom') && !tgtNode.data('is_junction');
-            const markId   = 'arr' + (d.color || '#666666').replace(/[^a-zA-Z0-9]/g, '');
-
-            if (hasArrow && !seenMarker[markId]) {
-                seenMarker[markId] = true;
-                defsLines.push(
-                    `<marker id="${markId}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">` +
-                    `<path d="M0,0 L0,6 L6,3 Z" fill="${color}"/></marker>`
-                );
-            }
-
-            const markerAttr = hasArrow ? ` marker-end="url(#${markId})"` : '';
-            edgeLines.push(
-                `<line x1="${fx(src.x)}" y1="${fy(src.y)}" ` +
-                `x2="${fx(tgt.x)}" y2="${fy(tgt.y)}" ` +
-                `stroke="${color}" stroke-width="1.5"${markerAttr}/>`
-            );
-        });
-
-        // ── Junction dots ──────────────────────────────────────────────────
-        cyInstance.nodes('[?is_junction]').forEach(function (node) {
-            const pos = node.position();
-            dotLines.push(`<circle cx="${fx(pos.x)}" cy="${fy(pos.y)}" r="6" fill="#555"/>`);
-        });
-
-        // ── Asset nodes ────────────────────────────────────────────────────
-        cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+        realNodes.forEach(function (node) {
             const data = node.data();
             const pos  = node.position();
             const nw   = +data.node_width  || 200;
             const nh   = +data.node_height || 100;
-            const fill = xe(data.bg_color || '#e3f2fd');
-            const nx   = pos.x - nw / 2;
-            const ny   = pos.y - nh / 2;
 
-            const parts = [];
-
-            // Node rectangle
-            parts.push(
-                `<rect x="${fx(nx)}" y="${fy(ny)}" ` +
-                `width="${nw}" height="${nh}" ` +
-                `fill="${fill}" stroke="#0052cc" stroke-width="1.5" rx="2"/>`
-            );
-
-            // Port labels — left column (in_ports) and right column (out_ports)
             const inPorts  = data.in_ports  || [];
             const outPorts = data.out_ports || [];
 
             inPorts.forEach(function (p, i) {
                 const py = portAbsY(pos, nh, i, inPorts.length);
-                parts.push(
-                    `<text x="${fx(nx + 3)}" y="${fy(py)}" dy="0.35em" ` +
+                textLines.push(
+                    `<text x="${f(pos.x - nw/2 + 4)}" y="${f(py)}" dy="0.35em" ` +
                     `text-anchor="start" font-family="Arial,sans-serif" ` +
-                    `font-size="${PORT_FS}px" fill="#222222">${xe(p)}</text>`
+                    `font-size="${PORT_FS}" fill="#222222">${xe(p)}</text>`
                 );
             });
             outPorts.forEach(function (p, i) {
                 const py = portAbsY(pos, nh, i, outPorts.length);
-                parts.push(
-                    `<text x="${fx(pos.x + nw / 2 - 3)}" y="${fy(py)}" dy="0.35em" ` +
+                textLines.push(
+                    `<text x="${f(pos.x + nw/2 - 4)}" y="${f(py)}" dy="0.35em" ` +
                     `text-anchor="end" font-family="Arial,sans-serif" ` +
-                    `font-size="${PORT_FS}px" fill="#222222">${xe(p)}</text>`
+                    `font-size="${PORT_FS}" fill="#222222">${xe(p)}</text>`
                 );
             });
 
-            // Center labels: tag + field values
             const fields    = data.fields || {};
             const tagVal    = fields['tag'] || data.display_tag || data.id || '';
             const otherVals = Object.keys(fields)
@@ -1406,39 +1343,76 @@ document.addEventListener("DOMContentLoaded", () => {
                 .slice(0, 3);
 
             const lineH  = TAG_FS * 1.5;
-            const totalLines = 1 + otherVals.length;
-            const blockH = totalLines * lineH;
+            const blockH = (1 + otherVals.length) * lineH;
             const startY = pos.y - blockH / 2 + lineH / 2;
 
-            parts.push(
-                `<text x="${fx(pos.x)}" y="${fy(startY)}" dy="0.35em" ` +
+            textLines.push(
+                `<text x="${f(pos.x)}" y="${f(startY)}" dy="0.35em" ` +
                 `text-anchor="middle" font-family="Arial,sans-serif" ` +
-                `font-size="${TAG_FS}px" font-weight="bold" fill="#1a1a1a">${xe(tagVal)}</text>`
+                `font-size="${TAG_FS}" font-weight="bold" fill="#1a1a1a">${xe(tagVal)}</text>`
             );
             otherVals.forEach(function (v, fi) {
-                parts.push(
-                    `<text x="${fx(pos.x)}" y="${fy(startY + lineH * (fi + 1))}" dy="0.35em" ` +
+                textLines.push(
+                    `<text x="${f(pos.x)}" y="${f(startY + lineH * (fi + 1))}" dy="0.35em" ` +
                     `text-anchor="middle" font-family="Arial,sans-serif" ` +
-                    `font-size="${(TAG_FS * 0.85).toFixed(1)}px" fill="#555555">${xe(String(v))}</text>`
+                    `font-size="${(TAG_FS * 0.85).toFixed(1)}" fill="#555555">${xe(String(v))}</text>`
                 );
             });
-
-            nodeLines.push(parts.join(''));
         });
 
-        console.log('[SVG export] nodes:', cyInstance.nodes('[!is_junction][!is_phantom]').length,
-            '| W:', W, 'H:', H,
-            '| sample:', nodeLines[0] ? nodeLines[0].slice(0, 200) : '(none)');
+        console.log('[SVG export] real nodes:', realNodes.length,
+            '| text elements:', textLines.length,
+            '| first text:', textLines[0] ? textLines[0].slice(0, 180) : '(none)',
+            '| first node pos:', realNodes.length ? JSON.stringify(realNodes[0].position()) : 'n/a',
+            '| first node data:', realNodes.length ? JSON.stringify({
+                id: realNodes[0].id(),
+                tag: realNodes[0].data('display_tag'),
+                fields: realNodes[0].data('fields'),
+                nw: realNodes[0].data('node_width'),
+                nh: realNodes[0].data('node_height'),
+            }) : 'n/a');
 
-        return [
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
-            defsLines.length ? `<defs>${defsLines.join('')}</defs>` : '',
-            `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
-            edgeLines.join(''),
-            dotLines.join(''),
-            nodeLines.join(''),
-            '</svg>',
-        ].join('');
+        // ── Fallback: build SVG from scratch if cy.svg() returned nothing ──
+        if (!baseSvg) {
+            const PAD = 40;
+            const bb2 = cyInstance.nodes('[!is_phantom]').boundingBox();
+            if (!isFinite(bb2.x1)) return null;
+            const W2 = Math.ceil(bb2.w + 2 * PAD);
+            const H2 = Math.ceil(bb2.h + 2 * PAD);
+            const ox2 = -bb2.x1 + PAD;
+            const oy2 = -bb2.y1 + PAD;
+            const adjusted = textLines.map(function (t) {
+                return t
+                    .replace(/x="(-?\d+\.\d+)"/g, function (_, v) {
+                        return `x="${(parseFloat(v) + ox2).toFixed(2)}"`;
+                    })
+                    .replace(/y="(-?\d+\.\d+)"/g, function (_, v) {
+                        return `y="${(parseFloat(v) + oy2).toFixed(2)}"`;
+                    });
+            });
+            const nodeRects = [];
+            cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+                const d = node.data();
+                const p = node.position();
+                const nw = +d.node_width || 200;
+                const nh = +d.node_height || 100;
+                nodeRects.push(
+                    `<rect x="${(p.x - nw/2 + ox2).toFixed(2)}" y="${(p.y - nh/2 + oy2).toFixed(2)}" ` +
+                    `width="${nw}" height="${nh}" fill="${xe(d.bg_color || '#e3f2fd')}" ` +
+                    `stroke="#0052cc" stroke-width="1.5" rx="2"/>`
+                );
+            });
+            return [
+                `<svg xmlns="http://www.w3.org/2000/svg" width="${W2}" height="${H2}" viewBox="0 0 ${W2} ${H2}">`,
+                `<rect x="0" y="0" width="${W2}" height="${H2}" fill="#ffffff"/>`,
+                nodeRects.join(''),
+                adjusted.join(''),
+                '</svg>',
+            ].join('');
+        }
+
+        // Inject text immediately before </svg>
+        return baseSvg.replace(/<\/svg>\s*$/, textLines.join('') + '</svg>');
     }
 
     // Render the SVG to a canvas for PNG export.
