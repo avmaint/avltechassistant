@@ -1265,24 +1265,115 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });
     }
 
-    // Shared capture helper: fits the graph, waits one animation frame, then
-    // uses html2canvas to rasterize the full render area (canvas + HTML label
-    // overlays).  Returns a Promise<HTMLCanvasElement>.
+    // Shared capture helper: copies the Cytoscape canvas then draws node
+    // content (ports + tag + fields) directly using the Canvas 2D API so
+    // the export works in all browsers without any external library.
+    // Returns a Promise<HTMLCanvasElement>.
     function captureDiagramCanvas() {
         if (!cyInstance) return Promise.reject(new Error('No diagram loaded.'));
-        if (typeof html2canvas !== 'function') {
-            return Promise.reject(new Error('html2canvas not loaded.'));
-        }
         cyInstance.fit(30);
         return new Promise(function (resolve) {
+            // Two frames: first lets fit() apply, second lets Cytoscape repaint.
             requestAnimationFrame(function () {
-                const el = document.getElementById('diagramRenderArea');
-                html2canvas(el, {
-                    backgroundColor: '#ffffff',
-                    scale: 2,
-                    logging: false,
-                    useCORS: true,
-                }).then(resolve);
+                requestAnimationFrame(function () {
+                    const cyCanvas = document.querySelector('#diagramRenderArea canvas');
+                    if (!cyCanvas) { resolve(document.createElement('canvas')); return; }
+
+                    const dpr = window.devicePixelRatio || 1;
+                    const W   = cyCanvas.width;
+                    const H   = cyCanvas.height;
+
+                    const out = document.createElement('canvas');
+                    out.width  = W;
+                    out.height = H;
+                    const ctx  = out.getContext('2d');
+
+                    // ── 1. White background + Cytoscape graph (edges, node shapes)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, W, H);
+                    ctx.drawImage(cyCanvas, 0, 0);
+
+                    // ── 2. Text labels over each real node
+                    const PORT_ROW_H = 22; // model-space row height
+                    const zoom = cyInstance.zoom();
+
+                    cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+                        const data = node.data();
+                        const bb   = node.renderedBoundingBox({
+                            includeLabels: false, includeOverlays: false,
+                        });
+
+                        // Rendered bounding box is in CSS px → scale to device px
+                        const x1 = bb.x1 * dpr;
+                        const y1 = bb.y1 * dpr;
+                        const nw = (bb.x2 - bb.x1) * dpr;
+                        const nh = (bb.y2 - bb.y1) * dpr;
+                        const cx = x1 + nw / 2;
+                        const cy = y1 + nh / 2;
+
+                        const inPorts  = data.in_ports  || [];
+                        const outPorts = data.out_ports || [];
+                        const nodeH    = data.node_height || 100;
+
+                        // Port row Y in device pixels, using the same formula
+                        // as portEndpointY so labels align with edge endpoints.
+                        function portY_px(idx, count) {
+                            const yFromTop = nodeH / 2
+                                - count * PORT_ROW_H / 2
+                                + idx   * PORT_ROW_H
+                                + PORT_ROW_H / 2;
+                            return y1 + (yFromTop / nodeH) * nh;
+                        }
+
+                        const portRowPx  = PORT_ROW_H * zoom * dpr;
+                        const portFontPx = Math.max(7 * dpr, Math.min(9 * dpr, portRowPx * 0.62));
+                        const portColW   = nw * 0.28;
+
+                        ctx.textBaseline = 'middle';
+
+                        // Left column: in_ports
+                        ctx.font      = `${portFontPx}px -apple-system, "Segoe UI", sans-serif`;
+                        ctx.fillStyle = '#222';
+                        ctx.textAlign = 'left';
+                        inPorts.forEach(function (port, i) {
+                            ctx.fillText(port, x1 + 3 * dpr, portY_px(i, inPorts.length), portColW);
+                        });
+
+                        // Right column: out_ports
+                        ctx.textAlign = 'right';
+                        outPorts.forEach(function (port, i) {
+                            ctx.fillText(port, x1 + nw - 3 * dpr, portY_px(i, outPorts.length), portColW);
+                        });
+
+                        // Center column: tag (bold) + other field values
+                        const fields    = data.fields || {};
+                        const tagVal    = fields['tag'] || data.display_tag || data.id || '';
+                        const otherVals = Object.keys(fields)
+                            .filter(function (k) { return k !== 'tag'; })
+                            .map(function (k) { return fields[k]; })
+                            .filter(Boolean)
+                            .slice(0, 3);
+
+                        const tagFontPx = Math.max(8 * dpr, Math.min(11 * dpr, portRowPx * 0.75));
+                        const lineH     = tagFontPx * 1.3;
+                        const totalH    = lineH + otherVals.length * lineH * 0.9;
+                        const startY    = cy - totalH / 2 + lineH / 2;
+                        const centerMaxW = nw * 0.52;
+
+                        ctx.textAlign = 'center';
+                        ctx.fillStyle = '#1a1a1a';
+                        ctx.font      = `bold ${tagFontPx}px -apple-system, "Segoe UI", sans-serif`;
+                        ctx.fillText(tagVal, cx, startY, centerMaxW);
+
+                        ctx.font      = `${tagFontPx * 0.82}px -apple-system, "Segoe UI", sans-serif`;
+                        ctx.fillStyle = '#555';
+                        otherVals.forEach(function (val, fi) {
+                            ctx.fillText(String(val), cx, startY + lineH * (fi + 1) * 0.9, centerMaxW);
+                        });
+                    });
+
+                    resolve(out);
+                });
             });
         });
     }
