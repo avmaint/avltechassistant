@@ -1268,237 +1268,216 @@ document.addEventListener("DOMContentLoaded", () => {
     // Build a complete SVG from model-space coordinates.
     // Nodes carry their own port/tag text; edges follow phantom waypoints so
     // back-edge routing is preserved.  No external library required.
+    // Build a complete SVG string from model-space node/edge data.
+    // Uses string templates (not DOM APIs) to avoid XMLSerializer namespace
+    // issues.  Returns the SVG as a plain string.
     function generateDiagramSvg() {
         if (!cyInstance) return null;
 
-        const NS         = 'http://www.w3.org/2000/svg';
         const PORT_ROW_H = 22;
         const PAD        = 40;
-        const FONT       = 'Arial, sans-serif';
         const PORT_FS    = 9;
         const TAG_FS     = 10;
 
-        // Bounding box of all elements (real nodes + phantom waypoints)
+        function xe(s) {   // XML-escape attribute / text content
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
         const bb = cyInstance.elements().boundingBox();
-        const W  = bb.w + 2 * PAD;
-        const H  = bb.h + 2 * PAD;
-        const ox = -bb.x1 + PAD;   // model → SVG x offset
-        const oy = -bb.y1 + PAD;   // model → SVG y offset
+        if (!isFinite(bb.x1)) return null;   // nothing in the graph yet
+        const W  = Math.ceil(bb.w + 2 * PAD);
+        const H  = Math.ceil(bb.h + 2 * PAD);
+        const ox = -bb.x1 + PAD;
+        const oy = -bb.y1 + PAD;
 
-        function fx(x) { return (x + ox).toFixed(2); }
-        function fy(y) { return (y + oy).toFixed(2); }
+        function fx(x) { return (x + ox).toFixed(1); }
+        function fy(y) { return (y + oy).toFixed(1); }
 
-        // Port absolute Y in model space (same formula as portEndpointY)
         function portAbsY(pos, nodeH, idx, count) {
             const yFromTop = nodeH / 2 - count * PORT_ROW_H / 2
-                + idx * PORT_ROW_H + PORT_ROW_H / 2;
+                           + idx * PORT_ROW_H + PORT_ROW_H / 2;
             return pos.y - nodeH / 2 + yFromTop;
         }
 
-        // Compute edge endpoint in model space
-        function edgePoint(nodeId, isSrc, portId) {
+        function edgePt(nodeId, isSrc, portId) {
             const n = cyInstance.getElementById(nodeId);
             if (!n.length) return null;
-            const pos  = n.position();
+            const pos = n.position();
             if (n.data('is_phantom') || n.data('is_junction')) return pos;
             const nw   = n.data('node_width')  || 200;
             const nh   = n.data('node_height') || 100;
             const list = isSrc ? (n.data('out_ports') || []) : (n.data('in_ports') || []);
             const idx  = list.indexOf(portId);
             const py   = idx >= 0 ? portAbsY(pos, nh, idx, list.length) : pos.y;
-            return { x: isSrc ? pos.x + nw / 2 : pos.x - nw / 2, y: py };
+            return { x: pos.x + (isSrc ? nw / 2 : -nw / 2), y: py };
         }
 
-        const svgEl = document.createElementNS(NS, 'svg');
-        svgEl.setAttribute('xmlns', NS);
-        svgEl.setAttribute('width',   W.toFixed(0));
-        svgEl.setAttribute('height',  H.toFixed(0));
-        svgEl.setAttribute('viewBox', `0 0 ${W.toFixed(0)} ${H.toFixed(0)}`);
+        const defsLines  = [];
+        const edgeLines  = [];
+        const dotLines   = [];
+        const nodeLines  = [];
+        const seenMarker = {};
 
-        // White background
-        const bgRect = document.createElementNS(NS, 'rect');
-        bgRect.setAttribute('x', '0'); bgRect.setAttribute('y', '0');
-        bgRect.setAttribute('width', W.toFixed(0)); bgRect.setAttribute('height', H.toFixed(0));
-        bgRect.setAttribute('fill', '#ffffff');
-        svgEl.appendChild(bgRect);
-
-        // ── Edges (drawn under nodes) ────────────────────────────────────────
+        // ── Edges ──────────────────────────────────────────────────────────
         cyInstance.edges().forEach(function (edge) {
             const d   = edge.data();
-            const src = edgePoint(d.source, true,  d.src_port);
-            const tgt = edgePoint(d.target, false, d.dst_port);
+            const src = edgePt(d.source, true,  d.src_port);
+            const tgt = edgePt(d.target, false, d.dst_port);
             if (!src || !tgt) return;
 
-            const tgtNode = cyInstance.getElementById(d.target);
-            const hasArrow = tgtNode.length && !tgtNode.data('is_phantom');
+            const color    = xe(d.color || '#666666');
+            const tgtNode  = cyInstance.getElementById(d.target);
+            const hasArrow = tgtNode.length && !tgtNode.data('is_phantom') && !tgtNode.data('is_junction');
+            const markId   = 'arr' + (d.color || '#666666').replace(/[^a-zA-Z0-9]/g, '');
 
-            const line = document.createElementNS(NS, 'line');
-            line.setAttribute('x1', fx(src.x)); line.setAttribute('y1', fy(src.y));
-            line.setAttribute('x2', fx(tgt.x)); line.setAttribute('y2', fy(tgt.y));
-            line.setAttribute('stroke', d.color || '#666');
-            line.setAttribute('stroke-width', '1.5');
-            if (hasArrow) {
-                const markId = 'arr_' + (d.color || '#666').replace('#', '');
-                line.setAttribute('marker-end', `url(#${markId})`);
-
-                // Register marker if not already present
-                if (!svgEl.querySelector('#' + markId)) {
-                    const defs = svgEl.querySelector('defs') || (function () {
-                        const d2 = document.createElementNS(NS, 'defs');
-                        svgEl.insertBefore(d2, svgEl.firstChild);
-                        return d2;
-                    }());
-                    const marker = document.createElementNS(NS, 'marker');
-                    marker.setAttribute('id',          markId);
-                    marker.setAttribute('markerWidth',  '6');
-                    marker.setAttribute('markerHeight', '6');
-                    marker.setAttribute('refX',         '5');
-                    marker.setAttribute('refY',         '3');
-                    marker.setAttribute('orient',       'auto');
-                    const path = document.createElementNS(NS, 'path');
-                    path.setAttribute('d',    'M0,0 L0,6 L6,3 Z');
-                    path.setAttribute('fill', d.color || '#666');
-                    marker.appendChild(path);
-                    defs.appendChild(marker);
-                }
+            if (hasArrow && !seenMarker[markId]) {
+                seenMarker[markId] = true;
+                defsLines.push(
+                    `<marker id="${markId}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">` +
+                    `<path d="M0,0 L0,6 L6,3 Z" fill="${color}"/></marker>`
+                );
             }
-            svgEl.appendChild(line);
+
+            const markerAttr = hasArrow ? ` marker-end="url(#${markId})"` : '';
+            edgeLines.push(
+                `<line x1="${fx(src.x)}" y1="${fy(src.y)}" ` +
+                `x2="${fx(tgt.x)}" y2="${fy(tgt.y)}" ` +
+                `stroke="${color}" stroke-width="1.5"${markerAttr}/>`
+            );
         });
 
-        // ── Junction splice dots ────────────────────────────────────────────
+        // ── Junction dots ──────────────────────────────────────────────────
         cyInstance.nodes('[?is_junction]').forEach(function (node) {
             const pos = node.position();
-            const c   = document.createElementNS(NS, 'circle');
-            c.setAttribute('cx', fx(pos.x));
-            c.setAttribute('cy', fy(pos.y));
-            c.setAttribute('r',  '6');
-            c.setAttribute('fill', '#555');
-            svgEl.appendChild(c);
+            dotLines.push(`<circle cx="${fx(pos.x)}" cy="${fy(pos.y)}" r="6" fill="#555"/>`);
         });
 
-        // ── Asset nodes (on top of edges) ───────────────────────────────────
+        // ── Asset nodes ────────────────────────────────────────────────────
         cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
             const data = node.data();
             const pos  = node.position();
             const nw   = data.node_width  || 200;
             const nh   = data.node_height || 100;
+            const cid  = 'cl' + node.id().replace(/[^a-zA-Z0-9]/g, '_');
+            const fill = xe(data.bg_color || '#e3f2fd');
 
-            // Background rectangle
-            const rect = document.createElementNS(NS, 'rect');
-            rect.setAttribute('x',      fx(pos.x - nw / 2));
-            rect.setAttribute('y',      fy(pos.y - nh / 2));
-            rect.setAttribute('width',  nw.toFixed(0));
-            rect.setAttribute('height', nh.toFixed(0));
-            rect.setAttribute('fill',   data.bg_color || '#e3f2fd');
-            rect.setAttribute('stroke', '#0052cc');
-            rect.setAttribute('stroke-width', '1.5');
-            rect.setAttribute('rx', '2');
-            svgEl.appendChild(rect);
+            // Clip path to keep text inside the box
+            defsLines.push(
+                `<clipPath id="${cid}">` +
+                `<rect x="${fx(pos.x - nw/2 + 1)}" y="${fy(pos.y - nh/2 + 1)}" ` +
+                `width="${(nw - 2).toFixed(0)}" height="${(nh - 2).toFixed(0)}"/></clipPath>`
+            );
 
-            // Clip path so text stays inside the box
-            const clipId = 'c' + node.id().replace(/[^a-zA-Z0-9]/g, '_');
-            const defs2  = svgEl.querySelector('defs') || (function () {
-                const d2 = document.createElementNS(NS, 'defs');
-                svgEl.insertBefore(d2, svgEl.firstChild);
-                return d2;
-            }());
-            const clip   = document.createElementNS(NS, 'clipPath');
-            clip.setAttribute('id', clipId);
-            const cr = document.createElementNS(NS, 'rect');
-            cr.setAttribute('x', fx(pos.x - nw / 2 + 1));
-            cr.setAttribute('y', fy(pos.y - nh / 2 + 1));
-            cr.setAttribute('width',  (nw - 2).toFixed(0));
-            cr.setAttribute('height', (nh - 2).toFixed(0));
-            clip.appendChild(cr);
-            defs2.appendChild(clip);
+            const parts = [];
 
-            const g = document.createElementNS(NS, 'g');
-            g.setAttribute('clip-path', `url(#${clipId})`);
+            // Node rectangle
+            parts.push(
+                `<rect x="${fx(pos.x - nw/2)}" y="${fy(pos.y - nh/2)}" ` +
+                `width="${nw.toFixed(0)}" height="${nh.toFixed(0)}" ` +
+                `fill="${fill}" stroke="#0052cc" stroke-width="1.5" rx="2"/>`
+            );
 
-            function txt(x, y, content, anchor, bold, fs, fill) {
-                const t = document.createElementNS(NS, 'text');
-                t.setAttribute('x', fx(x));
-                t.setAttribute('y', fy(y));
-                t.setAttribute('text-anchor',       anchor);
-                t.setAttribute('dominant-baseline', 'middle');
-                t.setAttribute('font-family',       FONT);
-                t.setAttribute('font-size',         fs.toFixed(1));
-                t.setAttribute('fill',              fill || '#222');
-                if (bold) t.setAttribute('font-weight', 'bold');
-                t.textContent = content;
-                return t;
-            }
+            // Text group (clipped)
+            const texts = [];
 
             const inPorts  = data.in_ports  || [];
             const outPorts = data.out_ports || [];
 
+            function portText(x, y, label, anchor) {
+                return `<text x="${fx(x)}" y="${fy(y)}" ` +
+                    `text-anchor="${anchor}" dominant-baseline="middle" ` +
+                    `font-family="Arial,sans-serif" font-size="${PORT_FS}" fill="#222">${xe(label)}</text>`;
+            }
+
             inPorts.forEach(function (p, i) {
-                g.appendChild(txt(
+                texts.push(portText(
                     pos.x - nw / 2 + 3,
                     portAbsY(pos, nh, i, inPorts.length),
-                    p, 'start', false, PORT_FS, '#222'
+                    p, 'start'
                 ));
             });
             outPorts.forEach(function (p, i) {
-                g.appendChild(txt(
+                texts.push(portText(
                     pos.x + nw / 2 - 3,
                     portAbsY(pos, nh, i, outPorts.length),
-                    p, 'end', false, PORT_FS, '#222'
+                    p, 'end'
                 ));
             });
 
+            // Center column: tag + field values
             const fields    = data.fields || {};
             const tagVal    = fields['tag'] || data.display_tag || data.id || '';
             const otherVals = Object.keys(fields)
                 .filter(function (k) { return k !== 'tag'; })
                 .map(function (k) { return fields[k]; })
-                .filter(Boolean).slice(0, 3);
+                .filter(function (v) { return v != null && v !== ''; })
+                .slice(0, 3);
 
             const lineH  = TAG_FS * 1.4;
             const totalH = lineH + otherVals.length * lineH * 0.9;
             const startY = pos.y - totalH / 2 + lineH / 2;
 
-            g.appendChild(txt(pos.x, startY, tagVal, 'middle', true, TAG_FS, '#1a1a1a'));
+            texts.push(
+                `<text x="${fx(pos.x)}" y="${fy(startY)}" ` +
+                `text-anchor="middle" dominant-baseline="middle" ` +
+                `font-family="Arial,sans-serif" font-size="${TAG_FS}" ` +
+                `font-weight="bold" fill="#1a1a1a">${xe(tagVal)}</text>`
+            );
             otherVals.forEach(function (v, fi) {
-                g.appendChild(txt(
-                    pos.x, startY + lineH * (fi + 1) * 0.9,
-                    String(v), 'middle', false, TAG_FS * 0.85, '#555'
-                ));
+                const y = startY + lineH * (fi + 1) * 0.9;
+                texts.push(
+                    `<text x="${fx(pos.x)}" y="${fy(y)}" ` +
+                    `text-anchor="middle" dominant-baseline="middle" ` +
+                    `font-family="Arial,sans-serif" font-size="${(TAG_FS * 0.85).toFixed(1)}" ` +
+                    `fill="#555">${xe(String(v))}</text>`
+                );
             });
 
-            svgEl.appendChild(g);
+            parts.push(`<g clip-path="url(#${cid})">${texts.join('')}</g>`);
+            nodeLines.push(parts.join(''));
         });
 
-        return new XMLSerializer().serializeToString(svgEl);
+        return [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+            `<defs>${defsLines.join('')}</defs>`,
+            `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
+            edgeLines.join(''),
+            dotLines.join(''),
+            nodeLines.join(''),
+            '</svg>',
+        ].join('');
     }
 
-    // Render the diagram SVG to an HTMLCanvasElement (for PNG export).
+    // Render the SVG to a canvas for PNG export.
+    // Uses a data: URL (not a blob URL) so Safari doesn't taint the canvas.
     function captureDiagramCanvas() {
         if (!cyInstance) return Promise.reject(new Error('No diagram loaded.'));
         cyInstance.fit(30);
         return new Promise(function (resolve, reject) {
             requestAnimationFrame(function () {
                 const svgStr = generateDiagramSvg();
-                if (!svgStr) { reject(new Error('SVG generation failed.')); return; }
-                const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-                const url  = URL.createObjectURL(blob);
-                const img  = new Image();
+                if (!svgStr) { reject(new Error('No diagram data.')); return; }
+                // btoa path handles non-ASCII via percent-encoding → latin-1 roundtrip
+                const dataUrl = 'data:image/svg+xml;base64,' +
+                    btoa(unescape(encodeURIComponent(svgStr)));
+                const img = new Image();
                 img.onload = function () {
+                    const w   = img.naturalWidth  || img.width  || 800;
+                    const h   = img.naturalHeight || img.height || 600;
                     const out = document.createElement('canvas');
-                    out.width  = img.naturalWidth  || img.width  || 800;
-                    out.height = img.naturalHeight || img.height || 600;
-                    const ctx  = out.getContext('2d');
+                    out.width  = w;
+                    out.height = h;
+                    const ctx = out.getContext('2d');
                     ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, out.width, out.height);
+                    ctx.fillRect(0, 0, w, h);
                     ctx.drawImage(img, 0, 0);
-                    URL.revokeObjectURL(url);
                     resolve(out);
                 };
-                img.onerror = function () {
-                    URL.revokeObjectURL(url);
-                    reject(new Error('SVG render failed.'));
-                };
-                img.src = url;
+                img.onerror = function () { reject(new Error('SVG render failed.')); };
+                img.src = dataUrl;
             });
         });
     }
@@ -1510,7 +1489,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const url = URL.createObjectURL(blob);
                     const a   = document.createElement('a');
                     a.href     = url;
-                    a.download = `diagram-${baseTargetTag || 'export'}.png`;
+                    a.download = 'diagram-' + (baseTargetTag || 'export') + '.png';
                     a.click();
                     URL.revokeObjectURL(url);
                 });
@@ -1524,12 +1503,12 @@ document.addEventListener("DOMContentLoaded", () => {
             cyInstance.fit(30);
             requestAnimationFrame(function () {
                 const svgStr = generateDiagramSvg();
-                if (!svgStr) { alert('SVG generation failed.'); return; }
+                if (!svgStr) { alert('No diagram data.'); return; }
                 const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
                 const url  = URL.createObjectURL(blob);
                 const a    = document.createElement('a');
                 a.href     = url;
-                a.download = `diagram-${baseTargetTag || 'export'}.svg`;
+                a.download = 'diagram-' + (baseTargetTag || 'export') + '.svg';
                 a.click();
                 URL.revokeObjectURL(url);
             });
