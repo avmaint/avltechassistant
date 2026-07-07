@@ -1265,130 +1265,251 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });
     }
 
-    // Shared capture helper: uses cyInstance.png() to composite all of
-    // Cytoscape's internal canvas layers, then draws port/tag text on top
-    // using Canvas 2D API.  No external library required.
-    // Returns a Promise<HTMLCanvasElement>.
+    // Build a complete SVG from model-space coordinates.
+    // Nodes carry their own port/tag text; edges follow phantom waypoints so
+    // back-edge routing is preserved.  No external library required.
+    function generateDiagramSvg() {
+        if (!cyInstance) return null;
+
+        const NS         = 'http://www.w3.org/2000/svg';
+        const PORT_ROW_H = 22;
+        const PAD        = 40;
+        const FONT       = 'Arial, sans-serif';
+        const PORT_FS    = 9;
+        const TAG_FS     = 10;
+
+        // Bounding box of all elements (real nodes + phantom waypoints)
+        const bb = cyInstance.elements().boundingBox();
+        const W  = bb.w + 2 * PAD;
+        const H  = bb.h + 2 * PAD;
+        const ox = -bb.x1 + PAD;   // model → SVG x offset
+        const oy = -bb.y1 + PAD;   // model → SVG y offset
+
+        function fx(x) { return (x + ox).toFixed(2); }
+        function fy(y) { return (y + oy).toFixed(2); }
+
+        // Port absolute Y in model space (same formula as portEndpointY)
+        function portAbsY(pos, nodeH, idx, count) {
+            const yFromTop = nodeH / 2 - count * PORT_ROW_H / 2
+                + idx * PORT_ROW_H + PORT_ROW_H / 2;
+            return pos.y - nodeH / 2 + yFromTop;
+        }
+
+        // Compute edge endpoint in model space
+        function edgePoint(nodeId, isSrc, portId) {
+            const n = cyInstance.getElementById(nodeId);
+            if (!n.length) return null;
+            const pos  = n.position();
+            if (n.data('is_phantom') || n.data('is_junction')) return pos;
+            const nw   = n.data('node_width')  || 200;
+            const nh   = n.data('node_height') || 100;
+            const list = isSrc ? (n.data('out_ports') || []) : (n.data('in_ports') || []);
+            const idx  = list.indexOf(portId);
+            const py   = idx >= 0 ? portAbsY(pos, nh, idx, list.length) : pos.y;
+            return { x: isSrc ? pos.x + nw / 2 : pos.x - nw / 2, y: py };
+        }
+
+        const svgEl = document.createElementNS(NS, 'svg');
+        svgEl.setAttribute('xmlns', NS);
+        svgEl.setAttribute('width',   W.toFixed(0));
+        svgEl.setAttribute('height',  H.toFixed(0));
+        svgEl.setAttribute('viewBox', `0 0 ${W.toFixed(0)} ${H.toFixed(0)}`);
+
+        // White background
+        const bgRect = document.createElementNS(NS, 'rect');
+        bgRect.setAttribute('x', '0'); bgRect.setAttribute('y', '0');
+        bgRect.setAttribute('width', W.toFixed(0)); bgRect.setAttribute('height', H.toFixed(0));
+        bgRect.setAttribute('fill', '#ffffff');
+        svgEl.appendChild(bgRect);
+
+        // ── Edges (drawn under nodes) ────────────────────────────────────────
+        cyInstance.edges().forEach(function (edge) {
+            const d   = edge.data();
+            const src = edgePoint(d.source, true,  d.src_port);
+            const tgt = edgePoint(d.target, false, d.dst_port);
+            if (!src || !tgt) return;
+
+            const tgtNode = cyInstance.getElementById(d.target);
+            const hasArrow = tgtNode.length && !tgtNode.data('is_phantom');
+
+            const line = document.createElementNS(NS, 'line');
+            line.setAttribute('x1', fx(src.x)); line.setAttribute('y1', fy(src.y));
+            line.setAttribute('x2', fx(tgt.x)); line.setAttribute('y2', fy(tgt.y));
+            line.setAttribute('stroke', d.color || '#666');
+            line.setAttribute('stroke-width', '1.5');
+            if (hasArrow) {
+                const markId = 'arr_' + (d.color || '#666').replace('#', '');
+                line.setAttribute('marker-end', `url(#${markId})`);
+
+                // Register marker if not already present
+                if (!svgEl.querySelector('#' + markId)) {
+                    const defs = svgEl.querySelector('defs') || (function () {
+                        const d2 = document.createElementNS(NS, 'defs');
+                        svgEl.insertBefore(d2, svgEl.firstChild);
+                        return d2;
+                    }());
+                    const marker = document.createElementNS(NS, 'marker');
+                    marker.setAttribute('id',          markId);
+                    marker.setAttribute('markerWidth',  '6');
+                    marker.setAttribute('markerHeight', '6');
+                    marker.setAttribute('refX',         '5');
+                    marker.setAttribute('refY',         '3');
+                    marker.setAttribute('orient',       'auto');
+                    const path = document.createElementNS(NS, 'path');
+                    path.setAttribute('d',    'M0,0 L0,6 L6,3 Z');
+                    path.setAttribute('fill', d.color || '#666');
+                    marker.appendChild(path);
+                    defs.appendChild(marker);
+                }
+            }
+            svgEl.appendChild(line);
+        });
+
+        // ── Junction splice dots ────────────────────────────────────────────
+        cyInstance.nodes('[?is_junction]').forEach(function (node) {
+            const pos = node.position();
+            const c   = document.createElementNS(NS, 'circle');
+            c.setAttribute('cx', fx(pos.x));
+            c.setAttribute('cy', fy(pos.y));
+            c.setAttribute('r',  '6');
+            c.setAttribute('fill', '#555');
+            svgEl.appendChild(c);
+        });
+
+        // ── Asset nodes (on top of edges) ───────────────────────────────────
+        cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
+            const data = node.data();
+            const pos  = node.position();
+            const nw   = data.node_width  || 200;
+            const nh   = data.node_height || 100;
+
+            // Background rectangle
+            const rect = document.createElementNS(NS, 'rect');
+            rect.setAttribute('x',      fx(pos.x - nw / 2));
+            rect.setAttribute('y',      fy(pos.y - nh / 2));
+            rect.setAttribute('width',  nw.toFixed(0));
+            rect.setAttribute('height', nh.toFixed(0));
+            rect.setAttribute('fill',   data.bg_color || '#e3f2fd');
+            rect.setAttribute('stroke', '#0052cc');
+            rect.setAttribute('stroke-width', '1.5');
+            rect.setAttribute('rx', '2');
+            svgEl.appendChild(rect);
+
+            // Clip path so text stays inside the box
+            const clipId = 'c' + node.id().replace(/[^a-zA-Z0-9]/g, '_');
+            const defs2  = svgEl.querySelector('defs') || (function () {
+                const d2 = document.createElementNS(NS, 'defs');
+                svgEl.insertBefore(d2, svgEl.firstChild);
+                return d2;
+            }());
+            const clip   = document.createElementNS(NS, 'clipPath');
+            clip.setAttribute('id', clipId);
+            const cr = document.createElementNS(NS, 'rect');
+            cr.setAttribute('x', fx(pos.x - nw / 2 + 1));
+            cr.setAttribute('y', fy(pos.y - nh / 2 + 1));
+            cr.setAttribute('width',  (nw - 2).toFixed(0));
+            cr.setAttribute('height', (nh - 2).toFixed(0));
+            clip.appendChild(cr);
+            defs2.appendChild(clip);
+
+            const g = document.createElementNS(NS, 'g');
+            g.setAttribute('clip-path', `url(#${clipId})`);
+
+            function txt(x, y, content, anchor, bold, fs, fill) {
+                const t = document.createElementNS(NS, 'text');
+                t.setAttribute('x', fx(x));
+                t.setAttribute('y', fy(y));
+                t.setAttribute('text-anchor',       anchor);
+                t.setAttribute('dominant-baseline', 'middle');
+                t.setAttribute('font-family',       FONT);
+                t.setAttribute('font-size',         fs.toFixed(1));
+                t.setAttribute('fill',              fill || '#222');
+                if (bold) t.setAttribute('font-weight', 'bold');
+                t.textContent = content;
+                return t;
+            }
+
+            const inPorts  = data.in_ports  || [];
+            const outPorts = data.out_ports || [];
+
+            inPorts.forEach(function (p, i) {
+                g.appendChild(txt(
+                    pos.x - nw / 2 + 3,
+                    portAbsY(pos, nh, i, inPorts.length),
+                    p, 'start', false, PORT_FS, '#222'
+                ));
+            });
+            outPorts.forEach(function (p, i) {
+                g.appendChild(txt(
+                    pos.x + nw / 2 - 3,
+                    portAbsY(pos, nh, i, outPorts.length),
+                    p, 'end', false, PORT_FS, '#222'
+                ));
+            });
+
+            const fields    = data.fields || {};
+            const tagVal    = fields['tag'] || data.display_tag || data.id || '';
+            const otherVals = Object.keys(fields)
+                .filter(function (k) { return k !== 'tag'; })
+                .map(function (k) { return fields[k]; })
+                .filter(Boolean).slice(0, 3);
+
+            const lineH  = TAG_FS * 1.4;
+            const totalH = lineH + otherVals.length * lineH * 0.9;
+            const startY = pos.y - totalH / 2 + lineH / 2;
+
+            g.appendChild(txt(pos.x, startY, tagVal, 'middle', true, TAG_FS, '#1a1a1a'));
+            otherVals.forEach(function (v, fi) {
+                g.appendChild(txt(
+                    pos.x, startY + lineH * (fi + 1) * 0.9,
+                    String(v), 'middle', false, TAG_FS * 0.85, '#555'
+                ));
+            });
+
+            svgEl.appendChild(g);
+        });
+
+        return new XMLSerializer().serializeToString(svgEl);
+    }
+
+    // Render the diagram SVG to an HTMLCanvasElement (for PNG export).
     function captureDiagramCanvas() {
         if (!cyInstance) return Promise.reject(new Error('No diagram loaded.'));
         cyInstance.fit(30);
-        return new Promise(function (resolve) {
-            // Two frames: first lets fit() apply, second lets Cytoscape repaint.
+        return new Promise(function (resolve, reject) {
             requestAnimationFrame(function () {
-                requestAnimationFrame(function () {
-                    // cy.png() composites all canvas layers (bg + nodes + edges).
-                    // full:false exports the current viewport; scale:1 keeps CSS-px units.
-                    const pngUrl = cyInstance.png({
-                        output: 'base64uri',
-                        bg:     '#ffffff',
-                        full:   false,
-                        scale:  1,
-                    });
-
-                    const img = new Image();
-                    img.onload = function () {
-                        const out = document.createElement('canvas');
-                        out.width  = img.width;
-                        out.height = img.height;
-                        const ctx  = out.getContext('2d');
-
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, img.width, img.height);
-                        ctx.drawImage(img, 0, 0);
-
-                        // Compute the scale from renderedBoundingBox() CSS-px to
-                        // PNG px.  cy.png({scale:1}) may produce CSS-px or device-px
-                        // depending on Cytoscape version; comparing to the container
-                        // CSS width handles both cases.
-                        const container  = document.getElementById('diagramRenderArea');
-                        const s2i        = img.width / (container.offsetWidth || img.width);
-                        const PORT_ROW_H = 22;
-                        const zoom       = cyInstance.zoom();
-
-                        cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
-                            const data = node.data();
-                            const bb   = node.renderedBoundingBox({
-                                includeLabels: false, includeOverlays: false,
-                            });
-
-                            const x1 = bb.x1 * s2i;
-                            const y1 = bb.y1 * s2i;
-                            const nw = (bb.x2 - bb.x1) * s2i;
-                            const nh = (bb.y2 - bb.y1) * s2i;
-                            const cx = x1 + nw / 2;
-                            const cy = y1 + nh / 2;
-
-                            const inPorts  = data.in_ports  || [];
-                            const outPorts = data.out_ports || [];
-                            const nodeH    = data.node_height || 100;
-
-                            function portY_img(idx, count) {
-                                const yFromTop = nodeH / 2
-                                    - count * PORT_ROW_H / 2
-                                    + idx   * PORT_ROW_H
-                                    + PORT_ROW_H / 2;
-                                return y1 + (yFromTop / nodeH) * nh;
-                            }
-
-                            const portRowImg = PORT_ROW_H * zoom * s2i;
-                            const portFontPx = Math.max(7, Math.min(11, portRowImg * 0.62));
-                            const portColW   = nw * 0.28;
-
-                            ctx.textBaseline = 'middle';
-                            ctx.font         = `${portFontPx}px -apple-system, "Segoe UI", sans-serif`;
-                            ctx.fillStyle    = '#222';
-
-                            ctx.textAlign = 'left';
-                            inPorts.forEach(function (port, i) {
-                                ctx.fillText(port, x1 + 3, portY_img(i, inPorts.length), portColW);
-                            });
-
-                            ctx.textAlign = 'right';
-                            outPorts.forEach(function (port, i) {
-                                ctx.fillText(port, x1 + nw - 3, portY_img(i, outPorts.length), portColW);
-                            });
-
-                            const fields     = data.fields || {};
-                            const tagVal     = fields['tag'] || data.display_tag || data.id || '';
-                            const otherVals  = Object.keys(fields)
-                                .filter(function (k) { return k !== 'tag'; })
-                                .map(function (k) { return fields[k]; })
-                                .filter(Boolean)
-                                .slice(0, 3);
-
-                            const tagFontPx  = Math.max(8, Math.min(13, portRowImg * 0.75));
-                            const lineH      = tagFontPx * 1.3;
-                            const totalH     = lineH + otherVals.length * lineH * 0.9;
-                            const startY     = cy - totalH / 2 + lineH / 2;
-                            const centerMaxW = nw * 0.52;
-
-                            ctx.textAlign = 'center';
-                            ctx.fillStyle = '#1a1a1a';
-                            ctx.font      = `bold ${tagFontPx}px -apple-system, "Segoe UI", sans-serif`;
-                            ctx.fillText(tagVal, cx, startY, centerMaxW);
-
-                            ctx.font      = `${tagFontPx * 0.82}px -apple-system, "Segoe UI", sans-serif`;
-                            ctx.fillStyle = '#555';
-                            otherVals.forEach(function (val, fi) {
-                                ctx.fillText(String(val), cx, startY + lineH * (fi + 1) * 0.9, centerMaxW);
-                            });
-                        });
-
-                        resolve(out);
-                    };
-                    img.src = pngUrl;
-                });
+                const svgStr = generateDiagramSvg();
+                if (!svgStr) { reject(new Error('SVG generation failed.')); return; }
+                const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                const url  = URL.createObjectURL(blob);
+                const img  = new Image();
+                img.onload = function () {
+                    const out = document.createElement('canvas');
+                    out.width  = img.naturalWidth  || img.width  || 800;
+                    out.height = img.naturalHeight || img.height || 600;
+                    const ctx  = out.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, out.width, out.height);
+                    ctx.drawImage(img, 0, 0);
+                    URL.revokeObjectURL(url);
+                    resolve(out);
+                };
+                img.onerror = function () {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('SVG render failed.'));
+                };
+                img.src = url;
             });
         });
     }
 
     if (exportPngBtn) {
-        exportPngBtn.addEventListener("click", function () {
+        exportPngBtn.addEventListener('click', function () {
             captureDiagramCanvas().then(function (canvas) {
                 canvas.toBlob(function (blob) {
                     const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
+                    const a   = document.createElement('a');
+                    a.href     = url;
                     a.download = `diagram-${baseTargetTag || 'export'}.png`;
                     a.click();
                     URL.revokeObjectURL(url);
@@ -1398,25 +1519,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (exportSvgBtn) {
-        exportSvgBtn.addEventListener("click", function () {
-            // Capture the visible diagram (canvas + HTML overlays) as a PNG,
-            // then wrap it in a minimal SVG so the file has an .svg extension
-            // and opens in SVG-aware tools.  A foreignObject-based vector SVG
-            // would require inlining all CSS; this approach is simpler and
-            // produces a pixel-perfect result.
-            captureDiagramCanvas().then(function (canvas) {
-                const w   = canvas.width;
-                const h   = canvas.height;
-                const png = canvas.toDataURL('image/png');
-                const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image href="${png}" x="0" y="0" width="${w}" height="${h}"/></svg>`;
-                const blob = new Blob([svg], { type: 'image/svg+xml' });
+        exportSvgBtn.addEventListener('click', function () {
+            if (!cyInstance) { alert('No diagram loaded.'); return; }
+            cyInstance.fit(30);
+            requestAnimationFrame(function () {
+                const svgStr = generateDiagramSvg();
+                if (!svgStr) { alert('SVG generation failed.'); return; }
+                const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
                 const url  = URL.createObjectURL(blob);
                 const a    = document.createElement('a');
                 a.href     = url;
                 a.download = `diagram-${baseTargetTag || 'export'}.svg`;
                 a.click();
                 URL.revokeObjectURL(url);
-            }).catch(function (err) { alert(err.message); });
+            });
         });
     }
 
