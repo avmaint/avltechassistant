@@ -1279,14 +1279,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const PORT_FS    = 9;
         const TAG_FS     = 10;
 
-        function xe(s) {   // XML-escape attribute / text content
+        function xe(s) {
             return String(s == null ? '' : s)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        const bb = cyInstance.elements().boundingBox();
-        if (!isFinite(bb.x1)) return null;   // nothing in the graph yet
+        // Use only real nodes for bounding box so phantom waypoints don't inflate it.
+        const realNodes = cyInstance.nodes('[!is_phantom]');
+        const bb = realNodes.length ? realNodes.boundingBox() : cyInstance.elements().boundingBox();
+        if (!isFinite(bb.x1)) return null;
         const W  = Math.ceil(bb.w + 2 * PAD);
         const H  = Math.ceil(bb.h + 2 * PAD);
         const ox = -bb.x1 + PAD;
@@ -1358,55 +1360,43 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.nodes('[!is_junction][!is_phantom]').forEach(function (node) {
             const data = node.data();
             const pos  = node.position();
-            const nw   = data.node_width  || 200;
-            const nh   = data.node_height || 100;
-            const cid  = 'cl' + node.id().replace(/[^a-zA-Z0-9]/g, '_');
+            const nw   = +data.node_width  || 200;
+            const nh   = +data.node_height || 100;
             const fill = xe(data.bg_color || '#e3f2fd');
-
-            // Clip path to keep text inside the box
-            defsLines.push(
-                `<clipPath id="${cid}">` +
-                `<rect x="${fx(pos.x - nw/2 + 1)}" y="${fy(pos.y - nh/2 + 1)}" ` +
-                `width="${(nw - 2).toFixed(0)}" height="${(nh - 2).toFixed(0)}"/></clipPath>`
-            );
+            const nx   = pos.x - nw / 2;
+            const ny   = pos.y - nh / 2;
 
             const parts = [];
 
             // Node rectangle
             parts.push(
-                `<rect x="${fx(pos.x - nw/2)}" y="${fy(pos.y - nh/2)}" ` +
-                `width="${nw.toFixed(0)}" height="${nh.toFixed(0)}" ` +
+                `<rect x="${fx(nx)}" y="${fy(ny)}" ` +
+                `width="${nw}" height="${nh}" ` +
                 `fill="${fill}" stroke="#0052cc" stroke-width="1.5" rx="2"/>`
             );
 
-            // Text group (clipped)
-            const texts = [];
-
+            // Port labels — left column (in_ports) and right column (out_ports)
             const inPorts  = data.in_ports  || [];
             const outPorts = data.out_ports || [];
 
-            function portText(x, y, label, anchor) {
-                return `<text x="${fx(x)}" y="${fy(y)}" ` +
-                    `text-anchor="${anchor}" dominant-baseline="middle" ` +
-                    `font-family="Arial,sans-serif" font-size="${PORT_FS}" fill="#222">${xe(label)}</text>`;
-            }
-
             inPorts.forEach(function (p, i) {
-                texts.push(portText(
-                    pos.x - nw / 2 + 3,
-                    portAbsY(pos, nh, i, inPorts.length),
-                    p, 'start'
-                ));
+                const py = portAbsY(pos, nh, i, inPorts.length);
+                parts.push(
+                    `<text x="${fx(nx + 3)}" y="${fy(py)}" dy="0.35em" ` +
+                    `text-anchor="start" font-family="Arial,sans-serif" ` +
+                    `font-size="${PORT_FS}px" fill="#222222">${xe(p)}</text>`
+                );
             });
             outPorts.forEach(function (p, i) {
-                texts.push(portText(
-                    pos.x + nw / 2 - 3,
-                    portAbsY(pos, nh, i, outPorts.length),
-                    p, 'end'
-                ));
+                const py = portAbsY(pos, nh, i, outPorts.length);
+                parts.push(
+                    `<text x="${fx(pos.x + nw / 2 - 3)}" y="${fy(py)}" dy="0.35em" ` +
+                    `text-anchor="end" font-family="Arial,sans-serif" ` +
+                    `font-size="${PORT_FS}px" fill="#222222">${xe(p)}</text>`
+                );
             });
 
-            // Center column: tag + field values
+            // Center labels: tag + field values
             const fields    = data.fields || {};
             const tagVal    = fields['tag'] || data.display_tag || data.id || '';
             const otherVals = Object.keys(fields)
@@ -1415,34 +1405,34 @@ document.addEventListener("DOMContentLoaded", () => {
                 .filter(function (v) { return v != null && v !== ''; })
                 .slice(0, 3);
 
-            const lineH  = TAG_FS * 1.4;
-            const totalH = lineH + otherVals.length * lineH * 0.9;
-            const startY = pos.y - totalH / 2 + lineH / 2;
+            const lineH  = TAG_FS * 1.5;
+            const totalLines = 1 + otherVals.length;
+            const blockH = totalLines * lineH;
+            const startY = pos.y - blockH / 2 + lineH / 2;
 
-            texts.push(
-                `<text x="${fx(pos.x)}" y="${fy(startY)}" ` +
-                `text-anchor="middle" dominant-baseline="middle" ` +
-                `font-family="Arial,sans-serif" font-size="${TAG_FS}" ` +
-                `font-weight="bold" fill="#1a1a1a">${xe(tagVal)}</text>`
+            parts.push(
+                `<text x="${fx(pos.x)}" y="${fy(startY)}" dy="0.35em" ` +
+                `text-anchor="middle" font-family="Arial,sans-serif" ` +
+                `font-size="${TAG_FS}px" font-weight="bold" fill="#1a1a1a">${xe(tagVal)}</text>`
             );
             otherVals.forEach(function (v, fi) {
-                const y = startY + lineH * (fi + 1) * 0.9;
-                texts.push(
-                    `<text x="${fx(pos.x)}" y="${fy(y)}" ` +
-                    `text-anchor="middle" dominant-baseline="middle" ` +
-                    `font-family="Arial,sans-serif" font-size="${(TAG_FS * 0.85).toFixed(1)}" ` +
-                    `fill="#555">${xe(String(v))}</text>`
+                parts.push(
+                    `<text x="${fx(pos.x)}" y="${fy(startY + lineH * (fi + 1))}" dy="0.35em" ` +
+                    `text-anchor="middle" font-family="Arial,sans-serif" ` +
+                    `font-size="${(TAG_FS * 0.85).toFixed(1)}px" fill="#555555">${xe(String(v))}</text>`
                 );
             });
 
-            parts.push(`<g clip-path="url(#${cid})">${texts.join('')}</g>`);
             nodeLines.push(parts.join(''));
         });
 
+        console.log('[SVG export] nodes:', cyInstance.nodes('[!is_junction][!is_phantom]').length,
+            '| W:', W, 'H:', H,
+            '| sample:', nodeLines[0] ? nodeLines[0].slice(0, 200) : '(none)');
+
         return [
-            '<?xml version="1.0" encoding="UTF-8"?>',
             `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
-            `<defs>${defsLines.join('')}</defs>`,
+            defsLines.length ? `<defs>${defsLines.join('')}</defs>` : '',
             `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`,
             edgeLines.join(''),
             dotLines.join(''),
