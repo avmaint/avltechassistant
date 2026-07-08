@@ -1398,13 +1398,20 @@ document.addEventListener("DOMContentLoaded", () => {
             ].join('');
         }
 
-        // The plugin draws content translated by (-bb.x1, -bb.y1) where bb is
-        // the bounding box of all elements (phantoms included).  Wrap the text
-        // in a <g> with the identical transform so coordinates line up.
-        const bb = cyInstance.mutableElements().boundingBox();
+        // canvas2svg wraps the drawn content in a <g> whose transform includes
+        // both the bounding-box translation and the renderer pixel ratio
+        // (applied even when scale:1 is passed).  Reuse that exact transform
+        // for the text group so model-space coordinates line up.
+        const tm = baseSvg.match(/transform="(translate\([^)]*\)(?: scale\([^)]*\))?)"/);
+        let groupTransform;
+        if (tm) {
+            groupTransform = tm[1];
+        } else {
+            const bb = cyInstance.mutableElements().boundingBox();
+            groupTransform = `translate(${f(-bb.x1)},${f(-bb.y1)})`;
+        }
         const textGroup =
-            `<g transform="translate(${f(-bb.x1)},${f(-bb.y1)})">` +
-            textLines.join('') + '</g>';
+            `<g transform="${groupTransform}">` + textLines.join('') + '</g>';
         return baseSvg.replace(/<\/svg>\s*$/, textGroup + '</svg>');
     }
 
