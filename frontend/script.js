@@ -1265,19 +1265,18 @@ document.addEventListener("DOMContentLoaded", () => {
         cyInstance.on('mouseout', 'edge', function() { diagramRenderArea.title = ''; });
     }
 
-    // Build a complete SVG from model-space coordinates.
-    // Nodes carry their own port/tag text; edges follow phantom waypoints so
-    // back-edge routing is preserved.  No external library required.
-    // Build a complete SVG string from model-space node/edge data.
-    // Uses string templates (not DOM APIs) to avoid XMLSerializer namespace
-    // issues.  Returns the SVG as a plain string.
+    // Build the export SVG: cytoscape-svg renders the structural base
+    // (node boxes + edges), then node text is injected on top from model
+    // data, since the on-screen text lives in HTML overlays the canvas
+    // renderer never sees.  Returns the SVG as a plain string.
     function generateDiagramSvg() {
         if (!cyInstance) return null;
 
         // ── Strategy: use cy.svg() for the structural base (colored boxes +
-        //   edges) then inject <text> elements using raw model coordinates.
-        //   cy.svg() preserves the model coordinate system in its viewBox, so
-        //   model position (px, py) can be used directly in injected elements.
+        //   edges) then inject <text> elements on top.  With {full:true,
+        //   scale:1} the plugin draws content translated by (-bb.x1, -bb.y1),
+        //   where bb is the bounding box of all elements — so the injected
+        //   text must be wrapped in a <g> with that same translation.
         const PORT_ROW_H = 22;
         const PORT_FS    = 9;
         const TAG_FS     = 10;
@@ -1298,11 +1297,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // ── Get base SVG from cytoscape-svg plugin ─────────────────────────
         let baseSvg = '';
         try {
-            baseSvg = cyInstance.svg({ full: true, bg: '#ffffff' }) || '';
+            // scale:1 keeps the output in model units (no devicePixelRatio).
+            baseSvg = cyInstance.svg({ full: true, bg: '#ffffff', scale: 1 }) || '';
         } catch (e) {
             console.warn('[SVG export] cy.svg() failed:', e);
         }
-        console.log('[SVG export] baseSvg header:', baseSvg.slice(0, 400));
 
         // ── Build text injections ──────────────────────────────────────────
         const textLines = [];
@@ -1360,18 +1359,6 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
 
-        console.log('[SVG export] real nodes:', realNodes.length,
-            '| text elements:', textLines.length,
-            '| first text:', textLines[0] ? textLines[0].slice(0, 180) : '(none)',
-            '| first node pos:', realNodes.length ? JSON.stringify(realNodes[0].position()) : 'n/a',
-            '| first node data:', realNodes.length ? JSON.stringify({
-                id: realNodes[0].id(),
-                tag: realNodes[0].data('display_tag'),
-                fields: realNodes[0].data('fields'),
-                nw: realNodes[0].data('node_width'),
-                nh: realNodes[0].data('node_height'),
-            }) : 'n/a');
-
         // ── Fallback: build SVG from scratch if cy.svg() returned nothing ──
         if (!baseSvg) {
             const PAD = 40;
@@ -1411,8 +1398,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ].join('');
         }
 
-        // Inject text immediately before </svg>
-        return baseSvg.replace(/<\/svg>\s*$/, textLines.join('') + '</svg>');
+        // The plugin draws content translated by (-bb.x1, -bb.y1) where bb is
+        // the bounding box of all elements (phantoms included).  Wrap the text
+        // in a <g> with the identical transform so coordinates line up.
+        const bb = cyInstance.mutableElements().boundingBox();
+        const textGroup =
+            `<g transform="translate(${f(-bb.x1)},${f(-bb.y1)})">` +
+            textLines.join('') + '</g>';
+        return baseSvg.replace(/<\/svg>\s*$/, textGroup + '</svg>');
     }
 
     // Render the SVG to a canvas for PNG export.
@@ -1429,15 +1422,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     btoa(unescape(encodeURIComponent(svgStr)));
                 const img = new Image();
                 img.onload = function () {
-                    const w   = img.naturalWidth  || img.width  || 800;
-                    const h   = img.naturalHeight || img.height || 600;
+                    const w     = img.naturalWidth  || img.width  || 800;
+                    const h     = img.naturalHeight || img.height || 600;
+                    const SCALE = 2;   // 2x raster so small text stays crisp
                     const out = document.createElement('canvas');
-                    out.width  = w;
-                    out.height = h;
+                    out.width  = w * SCALE;
+                    out.height = h * SCALE;
                     const ctx = out.getContext('2d');
                     ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, w, h);
-                    ctx.drawImage(img, 0, 0);
+                    ctx.fillRect(0, 0, out.width, out.height);
+                    ctx.drawImage(img, 0, 0, out.width, out.height);
                     resolve(out);
                 };
                 img.onerror = function () { reject(new Error('SVG render failed.')); };
