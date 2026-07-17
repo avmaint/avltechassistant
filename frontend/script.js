@@ -2992,12 +2992,19 @@ document.addEventListener("DOMContentLoaded", () => {
         list.className = 'manuals-list';
         data.manuals.forEach(manual => {
             const li = document.createElement('li');
-            const a = document.createElement('a');
-            a.href = manual.url;
-            a.textContent = manual.name;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            li.appendChild(a);
+            if (manual.url) {
+                // media-arts-home is always published on port 80; build the
+                // link against whatever hostname the browser used to reach
+                // this page rather than the backend's internal Docker address.
+                const a = document.createElement('a');
+                a.href = `${window.location.protocol}//${window.location.hostname}:80${manual.url}`;
+                a.textContent = manual.name;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                li.appendChild(a);
+            } else {
+                li.textContent = manual.name;
+            }
             list.appendChild(li);
         });
         container.appendChild(list);

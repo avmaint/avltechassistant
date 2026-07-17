@@ -3585,14 +3585,15 @@ def get_manuals(asset_tag: str):
         with _urllib_request.urlopen(url, timeout=5) as resp:
             data = _json.loads(resp.read().decode())
 
-        # Rewrite relative paths to absolute URLs, rejecting anything that
-        # isn't a simple absolute path (no protocol-relative or external URLs).
+        # Keep same-origin relative paths as-is and drop anything else
+        # (protocol-relative or external URLs). MANUALS_BASE_URL is only
+        # reachable from inside the Docker network, so it must not end up
+        # in a URL handed to the browser — the frontend builds the
+        # publicly-reachable link from the browser's own hostname instead.
         for manual in data.get("manuals", []):
             raw = manual.get("url", "")
-            if raw.startswith("/") and not raw.startswith("//"):
-                manual["url"] = f"{base}{raw}"
-            elif not raw.startswith("http"):
-                manual["url"] = ""  # drop anything unexpected
+            if not (raw.startswith("/") and not raw.startswith("//")):
+                manual["url"] = ""
 
         return data
     except _urllib_error.HTTPError as exc:
