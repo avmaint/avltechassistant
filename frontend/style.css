@@ -737,7 +737,7 @@ details[open] .diagram-options-summary::before {
     border-bottom: none;
 }
 
-.partners-section, .knowledgebase-section, .network-section, .manuals-section, .licenses-section {
+.partners-section, .knowledgebase-section, .network-section, .installed-section, .manuals-section, .licenses-section {
     margin-top: var(--space-5);
     padding-top: var(--space-4);
     border-top: 1px solid var(--color-border-light);

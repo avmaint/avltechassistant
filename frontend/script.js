@@ -2938,6 +2938,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const knowledgeBaseIssuesTableContainer = document.getElementById(KNOWLEDGE_BASE_ISSUES_TABLE_ID);
         const manualsContainer = document.getElementById(ASSET_MANUALS_CONTAINER_ID);
         const licensesContainer = document.getElementById(ASSET_LICENSES_CONTAINER_ID);
+        const installedAssetsContainer = document.getElementById("installedAssetsContainer");
 
         // Clear previous content from individual containers only
         if (assetPropertiesContainer) assetPropertiesContainer.innerHTML = '<p>Loading asset details...</p>';
@@ -2946,6 +2947,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (knowledgeBaseIssuesTableContainer) knowledgeBaseIssuesTableContainer.innerHTML = '';
         if (manualsContainer) manualsContainer.innerHTML = '';
         if (licensesContainer) licensesContainer.innerHTML = '';
+        if (installedAssetsContainer) installedAssetsContainer.innerHTML = '';
 
         document.querySelector(`.tab-button[data-tab="${ASSET_DETAILS_TAB_ID}"]`).click(); // Switch to asset details tab
 
@@ -2963,9 +2965,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const manualsData = manualsResponse.ok ? await manualsResponse.json() : null;
 
             renderAssetProperties(data.asset, assetPropertiesContainer);
+            renderAssetNetwork(data.network || [], document.getElementById("assetNetworkContainer"));
+            renderInstalledAssets(data.asset, data.installed_software || [], data.installed_on || [], installedAssetsContainer);
             renderPartnersList(data.input_partners, inputPartnersList, "input");
             renderPartnersList(data.output_partners, outputPartnersList, "output");
-            renderAssetNetwork(data.network || [], document.getElementById("assetNetworkContainer"));
             renderKnowledgeBaseIssues(data.knowledge_base_issues, knowledgeBaseIssuesTableContainer);
             renderManuals(manualsData, manualsContainer);
             renderLicenses(data.licenses || [], licensesContainer);
@@ -3279,6 +3282,91 @@ document.addEventListener("DOMContentLoaded", () => {
 
         table.appendChild(tbody);
         container.appendChild(table);
+    }
+
+    function renderInstalledAssets(asset, installedSoftware, installedOn, container) {
+        if (!container) return;
+        container.innerHTML = '';
+        container.classList.remove('installed-section');
+
+        const category = String((asset && asset.Category) || '').trim().toLowerCase();
+        const isComputer = category === 'computer';
+        const isSoftware = category === 'software';
+        if (!isComputer && !isSoftware) return; // Section only applies to these categories
+
+        container.classList.add('installed-section');
+
+        function buildInstalledTable(rows) {
+            const table = document.createElement('table');
+            table.className = 'network-table';
+            table.innerHTML = `<thead><tr>
+                <th>Asset Tag</th><th>Manufacturer</th><th>Model</th><th>Description</th><th>Usage</th>
+            </tr></thead>`;
+            const tbody = document.createElement('tbody');
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+
+                const tagCell = document.createElement('td');
+                const link = document.createElement('a');
+                link.href = '#';
+                link.className = 'installed-asset-link';
+                link.textContent = row.AssetTag || '—';
+                link.dataset.assetTag = row.AssetTag || '';
+                link.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const tag = event.currentTarget.dataset.assetTag;
+                    if (tag) setGlobalTargetAsset(tag);
+                });
+                tagCell.appendChild(link);
+                tr.appendChild(tagCell);
+
+                [row.Manufacturer, row.Model, row.Desc, row.Usage].forEach(value => {
+                    const td = document.createElement('td');
+                    td.textContent = value || '—';
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            return table;
+        }
+
+        // "Installed On" — where this software asset is installed (0 or 1 rows).
+        // Only applicable when the subject asset is itself Software.
+        if (isSoftware) {
+            const onSection = document.createElement('div');
+            const heading = document.createElement('h3');
+            heading.textContent = 'Installed On';
+            onSection.appendChild(heading);
+            if (installedOn.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'network-empty';
+                empty.textContent = 'No installation location recorded.';
+                onSection.appendChild(empty);
+            } else {
+                onSection.appendChild(buildInstalledTable(installedOn));
+            }
+            container.appendChild(onSection);
+        }
+
+        // Software installed on this asset — applies to Computers (what's installed
+        // on them) and to Software (software can itself host other software,
+        // e.g. Python installed within Docker Desktop).
+        const childSection = document.createElement('div');
+        if (isSoftware) childSection.style.marginTop = 'var(--space-4)';
+        const childHeading = document.createElement('h3');
+        childHeading.textContent = isComputer ? 'Installed Software' : 'Software Installed On This Asset';
+        childSection.appendChild(childHeading);
+        if (installedSoftware.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'network-empty';
+            empty.textContent = 'No software installed.';
+            childSection.appendChild(empty);
+        } else {
+            childSection.appendChild(buildInstalledTable(installedSoftware));
+        }
+        container.appendChild(childSection);
     }
 
     function renderPartnersList(partners, container, direction) {

@@ -1253,6 +1253,57 @@ def _get_partner_details_for_asset(
     return sorted(partners, key=lambda x: x["AssetTag"].lower())
 
 
+def _get_installed_software_for_asset(target_norm: str) -> List[Dict[str, str]]:
+    """
+    Returns assets with Category == 'Software' whose Location field references
+    the given asset tag (i.e. software installed on that asset). Used both for
+    a Computer's "Installed Software" list and, when the subject asset is
+    itself Software, the list of software installed on it (software can be
+    installed on other software, e.g. Python on Docker Desktop).
+    """
+    candidates = df_assets[
+        df_assets["Location"].astype(str).str.strip().str.upper() == target_norm
+    ]
+    candidates = candidates[
+        candidates["Category"].astype(str).str.strip().str.lower() == "software"
+    ]
+    installed = []
+    for _, row in candidates.iterrows():
+        installed.append(
+            {
+                "AssetTag": format_display_value(row["AssetTag"]),
+                "Manufacturer": format_display_value(row.get("Manufacturer")),
+                "Model": format_display_value(row.get("Model")),
+                "Desc": format_display_value(row.get("Desc")),
+                "Usage": format_display_value(row.get("Usage")),
+            }
+        )
+    return sorted(installed, key=lambda x: x["AssetTag"].lower())
+
+
+def _get_installed_on_asset(location_value: object) -> List[Dict[str, str]]:
+    """
+    For a Software asset, resolves its own Location field to the asset it is
+    installed on. Returns a list of 0 or 1 rows (Location is a single value).
+    """
+    loc_norm = normalize_tag_value(location_value)
+    if not loc_norm:
+        return []
+    parent_rows = df_assets[df_assets["AssetTagNorm"] == loc_norm]
+    if parent_rows.empty:
+        return []
+    row = parent_rows.iloc[0]
+    return [
+        {
+            "AssetTag": format_display_value(row["AssetTag"]),
+            "Manufacturer": format_display_value(row.get("Manufacturer")),
+            "Model": format_display_value(row.get("Model")),
+            "Desc": format_display_value(row.get("Desc")),
+            "Usage": format_display_value(row.get("Usage")),
+        }
+    ]
+
+
 @app.get("/diagram/connections")
 async def get_diagram_connections(target_tag: str) -> Dict[str, Any]:
     """
@@ -1338,6 +1389,19 @@ async def get_asset_details(asset_tag: str):
     except HTTPException:
         pass  # avl_data unavailable or returned an error — degrade gracefully
 
+    # 6. Software assets installed on this asset (Category=='Software' rows whose
+    #    Location references this asset tag). Relevant when this asset is a
+    #    Computer, or when it is itself Software (software can host software).
+    installed_software = _get_installed_software_for_asset(target_norm)
+
+    # 7. If this asset is itself Software, resolve what it is installed on.
+    asset_category = str(asset_properties.get("Category", "")).strip().lower()
+    installed_on = (
+        _get_installed_on_asset(asset_properties.get("Location"))
+        if asset_category == "software"
+        else []
+    )
+
     return {
         "asset": asset_properties,
         "input_partners": input_partners,
@@ -1345,6 +1409,8 @@ async def get_asset_details(asset_tag: str):
         "knowledge_base_issues": relevant_issues,
         "network": network_nics,
         "licenses": licenses_for_asset,
+        "installed_software": installed_software,
+        "installed_on": installed_on,
     }
 
 

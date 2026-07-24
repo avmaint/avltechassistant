@@ -1308,6 +1308,58 @@ def test_asset_network_endpoint():
             raise TestFailure(f"NIC record missing key '{key}'")
 
 
+def test_installed_assets_fields_present():
+    """Asset details response always includes installed_software/installed_on list keys,
+    regardless of the asset's Category."""
+    data = request_json("/assets/CSWU1/details")
+    for key in ("installed_software", "installed_on"):
+        if key not in data:
+            raise TestFailure(f"'{key}' key missing from asset details response")
+        if not isinstance(data[key], list):
+            raise TestFailure(f"'{key}' should be a list, got {type(data[key])}")
+
+
+def test_installed_assets_relationship_consistency():
+    """
+    Self-discovers a Software-category asset whose Location references another
+    asset (installed on it), then verifies the relationship is reported
+    consistently from both sides:
+      - the software asset's own details show installed_on == the parent
+      - the parent's details list that software asset under installed_software
+    Software installed on other software (e.g. a runtime installed inside a
+    container platform) must resolve the same way, since Location can point to
+    any asset regardless of the parent's own Category.
+    If no Software-category asset with a resolvable Location exists yet, this
+    is reported rather than failed, since it depends on inventory data.
+    """
+    all_assets = request_json("/assets/search?in_service_only=false")
+    software_rows = [
+        a for a in all_assets
+        if str(a.get("Category", "")).strip().lower() == "software"
+        and str(a.get("Location", "")).strip()
+    ]
+    if not software_rows:
+        print("    (no Category=Software asset with a Location set found — skipping relationship check)")
+        return
+
+    software_tag = software_rows[0]["AssetTag"]
+    parent_tag_raw = software_rows[0]["Location"].strip()
+
+    sw_details = request_json(f"/assets/{urllib.parse.quote(software_tag)}/details")
+    installed_on_tags = [row.get("AssetTag", "").upper() for row in sw_details.get("installed_on", [])]
+    if parent_tag_raw.upper() not in installed_on_tags:
+        raise TestFailure(
+            f"{software_tag}'s installed_on {installed_on_tags} does not include its Location {parent_tag_raw}"
+        )
+
+    parent_details = request_json(f"/assets/{urllib.parse.quote(parent_tag_raw)}/details")
+    installed_software_tags = [row.get("AssetTag", "").upper() for row in parent_details.get("installed_software", [])]
+    if software_tag.upper() not in installed_software_tags:
+        raise TestFailure(
+            f"{parent_tag_raw}'s installed_software {installed_software_tags} does not include {software_tag}"
+        )
+
+
 def test_dashboard_network_structure():
     """GET /dashboard/network returns required top-level keys."""
     data = request_json("/dashboard/network")
@@ -1640,6 +1692,8 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("Dashboard crosspoint: unavailable when CueCommander unreachable", test_dashboard_crosspoint_cuecommander_unavailable),
     ("Asset network: returns network key in asset details", test_asset_network_in_details),
     ("Asset network: /assets/{tag}/network returns list", test_asset_network_endpoint),
+    ("Installed assets: installed_software/installed_on fields present", test_installed_assets_fields_present),
+    ("Installed assets: relationship consistent from both sides", test_installed_assets_relationship_consistency),
     ("Dashboard network: response has required keys", test_dashboard_network_structure),
     ("Dashboard network: config exceptions present", test_dashboard_network_config_exceptions),
     ("Dashboard network: ping_results absent when CueCommander unreachable", test_dashboard_network_ping_unavailable),
