@@ -1360,6 +1360,46 @@ def test_installed_assets_relationship_consistency():
         )
 
 
+def test_installed_software_present_for_non_computer_category_host():
+    """
+    Regression test: a real bug shipped where the frontend only displayed the
+    Installed Software table when the host's own Category was exactly
+    "Computer". In practice host machines are usually categorized by AV
+    function instead (e.g. a Mac Mini tagged Category="Video"), so almost no
+    real host carries Category="Computer" and the section was hiding real
+    data. The backend endpoint was already correct (it never filtered by the
+    host's category) — this test pins that down explicitly by finding a host
+    whose Category is NOT "Computer" but which several Software assets report
+    as their installed_on target, and asserting installed_software is
+    populated for it regardless.
+    """
+    all_assets = request_json("/assets/search?in_service_only=false")
+    location_counts: dict = {}
+    for a in all_assets:
+        if str(a.get("Category", "")).strip().lower() == "software":
+            loc = str(a.get("Location", "")).strip().upper()
+            if loc:
+                location_counts[loc] = location_counts.get(loc, 0) + 1
+
+    non_computer_host_tag = None
+    for tag, count in sorted(location_counts.items(), key=lambda kv: -kv[1]):
+        host_rows = [a for a in all_assets if a.get("AssetTag", "").strip().upper() == tag]
+        if host_rows and str(host_rows[0].get("Category", "")).strip().lower() != "computer":
+            non_computer_host_tag = tag
+            break
+
+    if non_computer_host_tag is None:
+        print("    (no non-Computer-category asset hosting Software found — skipping)")
+        return
+
+    details = request_json(f"/assets/{urllib.parse.quote(non_computer_host_tag)}/details")
+    if not details.get("installed_software"):
+        raise TestFailure(
+            f"{non_computer_host_tag} (Category != Computer) has Software assets pointing "
+            f"Location at it but installed_software came back empty"
+        )
+
+
 def test_dashboard_network_structure():
     """GET /dashboard/network returns required top-level keys."""
     data = request_json("/dashboard/network")
@@ -1694,6 +1734,7 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("Asset network: /assets/{tag}/network returns list", test_asset_network_endpoint),
     ("Installed assets: installed_software/installed_on fields present", test_installed_assets_fields_present),
     ("Installed assets: relationship consistent from both sides", test_installed_assets_relationship_consistency),
+    ("Installed assets: present for non-Computer-category host", test_installed_software_present_for_non_computer_category_host),
     ("Dashboard network: response has required keys", test_dashboard_network_structure),
     ("Dashboard network: config exceptions present", test_dashboard_network_config_exceptions),
     ("Dashboard network: ping_results absent when CueCommander unreachable", test_dashboard_network_ping_unavailable),

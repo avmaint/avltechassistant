@@ -3290,9 +3290,15 @@ document.addEventListener("DOMContentLoaded", () => {
         container.classList.remove('installed-section');
 
         const category = String((asset && asset.Category) || '').trim().toLowerCase();
-        const isComputer = category === 'computer';
         const isSoftware = category === 'software';
-        if (!isComputer && !isSoftware) return; // Section only applies to these categories
+        // Host machines are not reliably tagged Category="Computer" (they're commonly
+        // categorized by AV function instead, e.g. Video/Audio) — so whether to show
+        // "Installed Software" is driven by whether anything actually points its
+        // Location here, not by the host's own Category. Software assets always show
+        // both tables (Installed On + Software Installed On This Asset), since a
+        // Software asset with an empty child list still needs the "Installed On" side.
+        const hasInstalledSoftware = installedSoftware.length > 0;
+        if (!isSoftware && !hasInstalledSoftware) return; // Nothing relevant to show
 
         container.classList.add('installed-section');
 
@@ -3350,23 +3356,26 @@ document.addEventListener("DOMContentLoaded", () => {
             container.appendChild(onSection);
         }
 
-        // Software installed on this asset — applies to Computers (what's installed
-        // on them) and to Software (software can itself host other software,
-        // e.g. Python installed within Docker Desktop).
-        const childSection = document.createElement('div');
-        if (isSoftware) childSection.style.marginTop = 'var(--space-4)';
-        const childHeading = document.createElement('h3');
-        childHeading.textContent = isComputer ? 'Installed Software' : 'Software Installed On This Asset';
-        childSection.appendChild(childHeading);
-        if (installedSoftware.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'network-empty';
-            empty.textContent = 'No software installed.';
-            childSection.appendChild(empty);
-        } else {
-            childSection.appendChild(buildInstalledTable(installedSoftware));
+        // Software installed on this asset — shown for any host with at least one
+        // Software asset pointing its Location here, and always shown for Software
+        // assets (which can themselves host other software, e.g. Python installed
+        // within Docker Desktop) even when currently empty.
+        if (isSoftware || hasInstalledSoftware) {
+            const childSection = document.createElement('div');
+            if (isSoftware) childSection.style.marginTop = 'var(--space-4)';
+            const childHeading = document.createElement('h3');
+            childHeading.textContent = isSoftware ? 'Software Installed On This Asset' : 'Installed Software';
+            childSection.appendChild(childHeading);
+            if (!hasInstalledSoftware) {
+                const empty = document.createElement('p');
+                empty.className = 'network-empty';
+                empty.textContent = 'No software installed.';
+                childSection.appendChild(empty);
+            } else {
+                childSection.appendChild(buildInstalledTable(installedSoftware));
+            }
+            container.appendChild(childSection);
         }
-        container.appendChild(childSection);
     }
 
     function renderPartnersList(partners, container, direction) {
