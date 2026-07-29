@@ -184,7 +184,43 @@ This document outlines the requirements for the interactive web application.
     -   If multiple assets match, a summary table is shown listing asset tag, manufacturer, model, all IP addresses, and all MAC addresses for each asset. Clicking an asset tag in the table displays that asset's full network details and sets the global asset tag.
 -   **Backend endpoint:** `GET /network/search?q={query}` implements the address search and returns a list of matching assets with `asset_tag`, `manufacturer`, `model`, `mac_addresses`, `ip_addresses`, and `nics` fields.
 
-## 9. Pending Enhancements
+## 9. Operational Dashboard
+
+The Dashboard tab is the default tab on page load (leftmost, active by default) since it's the primary operational view during setup, rehearsal, and shows. It surfaces exceptions and status deviations by comparing the static configuration in the asset/cable/network data against real-time telemetry from CueCommander (Node-RED, reached at `CUECOMMANDER_BASE`, default `http://cumu-g001.local:1880`). Each panel degrades independently to `unavailable` (with an `error` field explaining why) if its CueCommander data source can't be reached — the dashboard always renders whatever panels it can rather than erroring as a whole.
+
+-   **Toolbar:** Shows the last-updated timestamp, a manual refresh button, and an auto-refresh toggle. When enabled, the dashboard polls every 30 seconds.
+-   **Panel status values:** `ok`, `warning`, `critical`, `unavailable`, or `pending` (adapter not yet implemented for that device). The dashboard's overall status is the worst of its panels' statuses.
+
+### 9a. Crosspoint / Route Comparison
+
+-   **Purpose:** Cross-references cable records where `Type == "route"` and `SrcTag == DstTag` (i.e., an internal routing device's defined input→output mappings) against the live routing state reported by CueCommander, flagging mismatches.
+-   **Backend endpoint:** `GET /dashboard/crosspoint` groups route cables by the routing device's asset tag and dispatches each group to a per-device-type adapter (an internal registry keyed by asset tag → adapter name, e.g. `"videohub"`). A device with no registered adapter yields a `pending` panel rather than being silently omitted. Devices in `_ROUTE_EXCLUDED_ASSETS` are omitted entirely (currently `ZVKU-A001`, `ZVIU-E004` — cable records exist for these but there's no safe/viable API to verify them against).
+-   **VideoHub adapter** (asset `2507-0700`, the only adapter currently implemented): fetches `GET /api/videohub/crosspoints` from CueCommander (`{"crosspoints": [{"input": N, "output": N}]}`) and compares each defined route cable's `SrcPort`/`DstPort` (format `in_NN`/`out_NN`) against the live cross-point for that output. Exception types: **mismatch** (cable says one input, live routing has another), and **output absent** (an output defined in cable data has no live cross-point at all). Each panel includes the device's `model` and `usage` for display context.
+-   **Remaining questions carried over from the original design:** whether other routing matrices exist beyond the VideoHub (audio matrix, Dante controller, HDMI switcher) that would need their own adapter; whether `2507-0700` is the only VideoHub or the adapter needs to be parameterized for multiple instances of the same device type.
+
+### 9b. Network Monitoring
+
+-   **Purpose:** Flags `Monitor=Yes` network rows with no IP configured (a data-entry gap), and reports live ping status for monitored devices.
+-   **Data source:** `data/network.xlsx`, one row per NIC, keyed by AssetTag + NIC (NIC blank for single-NIC devices). The `Monitor` column controls which rows are pinged.
+-   **Backend endpoints:**
+    -   `GET /api/network/targets` — canonical list of `Monitor=Yes` rows that have an IP (`asset_tag`, `nic`, `ip`, `usage`, `related_issue_ids`). This app is the source of truth for the target list; CueCommander never calls this endpoint itself.
+    -   `GET /dashboard/network` — on every call, first pushes the current target list to CueCommander (`POST /api/network/status`'s targets, fire-and-forget) so it knows what to ping, then returns `config_exceptions` (Monitor=Yes rows with no IP, enriched with model/usage) plus the `ping` panel (from CueCommander `GET /api/network/status`: per-device `packets_sent`, `packets_received`, `avg_ms`, `loss_pct`, `status` of `ok`/`high_latency`/`down`/`unknown`).
+-   **Ping mechanism:** CueCommander (running on macOS) performs the actual pings via `ping -c 3 -t 5 <ip>` (Node-RED exec node).
+
+### 9c. Klang Mix Consistency
+
+-   **Purpose:** Klang's personal-monitor system maintains one independent copy of channel state (name, mute, visible, solo) per mix (up to 16). Operators can let these drift out of sync — this panel finds and lets you correct that drift.
+-   **Backend endpoints** (thin proxies to CueCommander's Node-RED vocalnames API — see CueCommander-NR's `design.md`/`requirements.md`, Subsystem: Klang, for the actual OSC implementation):
+    -   `GET /dashboard/klang` — sweep state (`active`, `started_at`, `mix_current`) plus, once results exist, the `variances` panel (`total_variances`, `critical_count`, each variance: `mix`, `channel`, `attribute`, `consensus`, `actual`, `severity`, `vote_count`/`total_votes`) and a `mixes` panel (mix names/presets).
+    -   `POST /dashboard/klang/buildconsensus` — triggers a ~17s hardware sweep (visits each of the 16 mixes via `SwitchUser`, records state, computes a per-attribute plurality consensus). Returns `202` with an estimate, or `409` if a sweep is already running.
+    -   `POST /dashboard/klang/setvariance` (`{mix, channel, attribute, value}`) — the write path behind both per-row actions below.
+-   **UI — per-variance-row actions:**
+    -   **Set this to** — adopts the consensus value on the deviating mix (single `setvariance` call).
+    -   **Set all others to** — propagates *this* mix's actual (non-consensus) value to the other 15 mixes: one sequential `setvariance` call per target mix, ~400ms apart (the Klang device needs the prior `SwitchUser`+`SET` pair to settle before the next `SwitchUser`).
+-   **Severity:** `mute` mismatches are `critical` (audible impact); `name`/`visible`/`solo` mismatches are `warning`.
+-   **Known-fixed bug (2026-07-28):** `setvariance` previously reported `ok:true` unconditionally even when the OSC send never reached the Konductor (a disconnected wire in the Node-RED flow silently dropped every send). Fixed in CueCommander-NR — see that project's `requirements.md` KL-06/07/08 and `design.md` "Subsystem: Klang" for the full writeup. Both dashboard write actions now correctly report failure if the send doesn't succeed.
+
+## 10. Pending Enhancements
 
 -   Add support for multiple diagram layouts (e.g., hierarchical, radial) to improve readability for complex connectivity.
 -   Provide a context menu on the individual diagram lines to hide. The node context menu should also provide a reshow option with a sublist of available lines that can be readded to the diagram.

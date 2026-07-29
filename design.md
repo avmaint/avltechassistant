@@ -65,6 +65,32 @@ Software assets (`Category` == `Software`) record what host they're installed on
 - Table rows are built via `document.createElement`/`.textContent`/`.dataset`, **not** by interpolating values into an HTML string — this is required, not stylistic: asset fields (tag, manufacturer, etc.) are user-editable inventory data, and the existing `escapeHtml()` helper elsewhere in this file only encodes `&`/`<`/`>`, not `"`. Interpolating its output into a double-quoted HTML attribute (e.g. `data-asset-tag="${escapeHtml(x)}"`) is exploitable by a value containing a `"` — it breaks out of the attribute and can inject a live event-handler attribute. `element.dataset.x = value` / `element.textContent = value` have no such gap because the browser never re-parses the string as markup. Any new table row builder in this file should use DOM construction for the same reason, not follow the `innerHTML` + `escapeHtml()` template-literal pattern used in older sections (e.g. `renderAssetNetwork`) for anything containing editable asset data.
 - Reuses the existing `.network-table` CSS class rather than introducing a new one — it's already a generic bordered-table style with no NIC-specific styling baked in.
 
+# Subsystem: Operational Dashboard
+
+## Overview
+
+The Dashboard tab (default tab on load) compares the static asset/cable/network data this app already owns against real-time telemetry from CueCommander (Node-RED, `CUECOMMANDER_BASE`, default `http://cumu-g001.local:1880`), polling `GET /dashboard/{crosspoint,network,klang}` every 30s. See `requirements.md` Section 9 for the functional spec of each panel; this section covers the shared architecture and one real bug it produced.
+
+## Backend Pattern: Independent Panel Degradation
+
+Each of the three panels (`crosspoint`, `network`, `klang`) is fetched and computed independently within its own `try`/`except`; a CueCommander-reachability failure in one panel doesn't take down the others. Each panel reports its own `status` (`ok`/`warning`/`critical`/`unavailable`/`pending`) and, when `unavailable`, an `error` string explaining why — this is deliberate so the dashboard is still useful when only some of CueCommander's flows are up. `GET /dashboard/*` never proxies a CueCommander error as an HTTP error itself; it always returns 200 with the degraded panel(s) inline.
+
+## Crosspoint Panel: Adapter Registry
+
+`GET /dashboard/crosspoint` groups route cables (`SrcTag == DstTag`, `Type == "route"`) by the routing device's asset tag, then dispatches each group through `_ROUTE_ADAPTER_FOR_ASSET` (asset tag → adapter name) to a function registered via the `@_route_adapter("name")` decorator. Adding support for a new routing device type (a Dante controller, an HDMI matrix, etc.) means registering a new adapter function and adding its asset tag(s) to the lookup — the panel-assembly loop itself doesn't need to change. A device with route cables but no registered adapter still gets a panel (`status: "pending"`), not silent omission, so gaps in monitoring coverage stay visible.
+
+## Network Panel: This App Is the Source of Truth for Targets
+
+Unlike the crosspoint and Klang panels (which only *read* from CueCommander), the network panel *pushes* state to it: every `GET /dashboard/network` call first pushes the current `Monitor=Yes` target list to CueCommander (`POST /api/network/status`'s targets, fire-and-forget — failures are silently ignored since the read half of the same call will just report `unavailable` if CueCommander is genuinely down) before reading back ping results. CueCommander never calls this app to ask what to monitor; it only ever receives pushes. This means the network table (`data/network.xlsx`) is the single place target configuration is edited — CueCommander has no independent notion of which devices to ping.
+
+## Klang Panel: Proxy Only, Logic Lives in CueCommander-NR
+
+`/dashboard/klang*` are thin proxies (`_fetch_nodered_json`/`_post_nodered_json`) to CueCommander's vocalnames HTTP API — no OSC, no consensus logic, and no Konductor communication happens in this codebase. See CueCommander-NR's own `design.md` ("Subsystem: Klang (Personal Monitoring) — Mix Consistency Dashboard") for the actual sweep/consensus/setvariance implementation.
+
+### Known Hazard: an undocumented feature is an untested feature
+
+This panel (and the crosspoint/network panels alongside it) existed in production, fully built, with zero mention in this file or `requirements.md` prior to 2026-07-28 — the only trace was a standalone planning doc (`feature-op-dashboard.md`) that predates the Klang panel entirely and was never updated once it shipped. The consequence was concrete, not hypothetical: `POST /dashboard/klang/setvariance` had a real bug (silently dropped every OSC send while always reporting success — see CueCommander-NR `requirements.md` KL-06/07/08) that shipped and went unnoticed, in part because there was no test anywhere — in this repo or CueCommander-NR's — that exercised the endpoint at all. A feature that isn't in the requirements doc doesn't get requirements-driven test coverage. When a feature ships, its planning doc's content belongs folded into `requirements.md`/`design.md` and the planning doc retired, not left to accumulate alongside the real docs as a second, drifting source of truth.
+
 # Current Known Limitations
 
-See `requirements.md` Section 7 (Known Issues) and Section 9 (Pending Enhancements) for the live list — kept there rather than duplicated here since it changes per-feature, not architecturally.
+See `requirements.md` Section 7 (Known Issues) and Section 10 (Pending Enhancements) for the live list — kept there rather than duplicated here since it changes per-feature, not architecturally.
