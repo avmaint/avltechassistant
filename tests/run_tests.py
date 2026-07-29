@@ -1282,6 +1282,78 @@ def test_dashboard_crosspoint_cuecommander_unavailable():
 
 
 # ---------------------------------------------------------------------------
+# Dashboard — Klang Mix Consistency tests
+# ---------------------------------------------------------------------------
+#
+# These only exercise the read-only GET /dashboard/klang panel, mirroring the
+# crosspoint tests above. The write actions (POST .../setvariance,
+# .../buildconsensus) trigger real OSC sends / a ~17s hardware sweep against
+# the live Konductor and are deliberately NOT exercised here on every test
+# run; that regression coverage lives in CueCommander-NR's own test suite
+# (tests/cases/klang_setvariance.js), which redirects sends away from
+# production via klang_konductor_override.
+#
+# There was previously zero coverage of this panel at all, in either test
+# suite — the real bug (setvariance always reporting ok:true even though the
+# OSC packets were silently dropped) shipped and went unnoticed for exactly
+# that reason. This section exists so the panel's shape is at least pinned
+# down, even though the write-path regression itself is owned by
+# CueCommander-NR's suite where it can safely be exercised for real.
+
+
+def test_dashboard_klang_structure():
+    """GET /dashboard/klang returns required top-level keys."""
+    data = request_json("/dashboard/klang")
+    for key in ("generated_at", "status", "sweep"):
+        if key not in data:
+            raise TestFailure(f"Missing key '{key}' in /dashboard/klang response")
+    if data["status"] not in ("ok", "warning", "critical", "unavailable", "pending"):
+        raise TestFailure(f"Unexpected status value: {data['status']!r}")
+
+
+def test_dashboard_klang_sweep_shape():
+    """The 'sweep' panel always has active/started_at/mix_current, even with no data yet."""
+    data = request_json("/dashboard/klang")
+    sweep = data.get("sweep")
+    if sweep is None:
+        raise TestFailure("Expected a 'sweep' object even when unavailable")
+    for key in ("active", "started_at", "mix_current"):
+        if key not in sweep:
+            raise TestFailure(f"Sweep panel missing key '{key}'")
+    if not isinstance(sweep["active"], bool):
+        raise TestFailure(f"sweep.active should be a bool, got {type(sweep['active'])}")
+
+
+def test_dashboard_klang_variances_shape_when_available():
+    """When status isn't unavailable/pending, the variances panel has the documented shape."""
+    data = request_json("/dashboard/klang")
+    if data["status"] in ("unavailable", "pending"):
+        return  # no results yet in this environment — nothing to validate
+    variances = data.get("variances")
+    if not isinstance(variances, dict):
+        raise TestFailure(f"Expected a 'variances' dict when status={data['status']!r}, got {type(variances)}")
+    for key in ("total_variances", "variances"):
+        if key not in variances:
+            raise TestFailure(f"Variances panel missing key '{key}'")
+    if not isinstance(variances["variances"], list):
+        raise TestFailure("variances.variances should be a list")
+    if variances["variances"]:
+        row = variances["variances"][0]
+        for key in ("mix", "channel", "attribute", "consensus", "actual", "severity"):
+            if key not in row:
+                raise TestFailure(f"Variance row missing key '{key}': {row}")
+        if row["severity"] not in ("warning", "critical"):
+            raise TestFailure(f"Unexpected severity: {row['severity']!r}")
+
+
+def test_dashboard_klang_cuecommander_unavailable():
+    """Klang panel status is 'unavailable' with an error when CueCommander is unreachable."""
+    data = request_json("/dashboard/klang")
+    if data["status"] == "unavailable" and "error" not in data:
+        raise TestFailure("Unavailable Klang panel missing 'error' field")
+
+
+# ---------------------------------------------------------------------------
 # Network monitoring tests
 # ---------------------------------------------------------------------------
 
@@ -1730,6 +1802,10 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("Dashboard crosspoint: panels list routing devices", test_dashboard_crosspoint_panels_present),
     ("Dashboard crosspoint: VideoHub panel present", test_dashboard_crosspoint_videohub_panel),
     ("Dashboard crosspoint: unavailable when CueCommander unreachable", test_dashboard_crosspoint_cuecommander_unavailable),
+    ("Dashboard Klang: response has required keys", test_dashboard_klang_structure),
+    ("Dashboard Klang: sweep panel has active/started_at/mix_current", test_dashboard_klang_sweep_shape),
+    ("Dashboard Klang: variances panel shape when available", test_dashboard_klang_variances_shape_when_available),
+    ("Dashboard Klang: unavailable when CueCommander unreachable", test_dashboard_klang_cuecommander_unavailable),
     ("Asset network: returns network key in asset details", test_asset_network_in_details),
     ("Asset network: /assets/{tag}/network returns list", test_asset_network_endpoint),
     ("Installed assets: installed_software/installed_on fields present", test_installed_assets_fields_present),
