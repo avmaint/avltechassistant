@@ -711,6 +711,137 @@ details[open] .diagram-options-summary::before {
     body.print-rack-mode .rack-svg-wrap svg g[style*="pointer"] {
         cursor: default !important;
     }
+
+    /* Knowledge Base print: when the KB tab is active, print only the expanded
+       issue(s) as a dense document — no app chrome, search, or collapsed rows. */
+    body:has(#knowledgeBase.active) {
+        padding: 0;
+        font-size: 10.5pt;
+        line-height: 1.35;
+    }
+    body:has(#knowledgeBase.active) .container {
+        max-width: none;
+        padding: 0;
+        box-shadow: none;
+        border-radius: 0;
+    }
+    body:has(#knowledgeBase.active) .container > h1,
+    #knowledgeBase > h2,
+    #knowledgeBase .search-section,
+    #knowledgeBase .kb-expand-icon,
+    #knowledgeBase .kb-issue-section:has(.kb-issue-details:not(.expanded)) {
+        display: none !important;
+    }
+    #knowledgeBase.tab-content {
+        padding: 0;
+    }
+    #knowledgeBase .kb-issue-section {
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        margin: 0;
+        overflow: visible;
+    }
+    #knowledgeBase .kb-issue-section + .kb-issue-section {
+        break-before: page;
+    }
+    #knowledgeBase .kb-issue-header {
+        display: block;
+        padding: 0 0 4pt;
+        margin-bottom: 6pt;
+        background: none;
+        border-bottom: 1.5pt solid #000;
+        break-after: avoid;
+    }
+    #knowledgeBase .kb-issue-id {
+        display: inline;
+        background: none;
+        padding: 0;
+        margin-right: 8pt;
+        min-width: 0;
+        font-size: 11pt;
+        color: #555;
+    }
+    #knowledgeBase .kb-issue-title {
+        font-size: 15pt;
+        font-weight: 700;
+        color: #000;
+    }
+    #knowledgeBase .kb-issue-details.expanded {
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        transition: none;
+    }
+    /* Label in a narrow left column, value beside it */
+    #knowledgeBase .kb-field {
+        display: grid;
+        grid-template-columns: 11em 1fr;
+        column-gap: 8pt;
+        margin: 0;
+        padding: 3pt 0;
+        border-bottom: 0.5pt solid #ccc;
+        line-height: 1.35;
+    }
+    #knowledgeBase .kb-field strong {
+        color: #000;
+        font-size: 9.5pt;
+    }
+    /* pre-wrap turns the newlines marked puts between block elements into
+       blank lines; keep author line breaks only inside the text blocks. */
+    #knowledgeBase .kb-field-value {
+        white-space: normal;
+    }
+    #knowledgeBase .kb-field-value p,
+    #knowledgeBase .kb-field-value li {
+        white-space: pre-line;
+    }
+    #knowledgeBase .kb-field-value > :first-child {
+        margin-top: 0;
+    }
+    #knowledgeBase .kb-field-value > :last-child {
+        margin-bottom: 0;
+    }
+    #knowledgeBase .kb-field-value p {
+        margin: 0 0 3pt;
+    }
+    #knowledgeBase .kb-field-value ul,
+    #knowledgeBase .kb-field-value ol,
+    #knowledgeBase .kb-seealso-list {
+        margin: 2pt 0;
+        padding-left: 16pt;
+    }
+    #knowledgeBase .kb-field-value li,
+    #knowledgeBase .kb-seealso-list li {
+        margin-bottom: 1pt;
+    }
+    #knowledgeBase .kb-field-value h1,
+    #knowledgeBase .kb-field-value h2,
+    #knowledgeBase .kb-field-value h3,
+    #knowledgeBase .kb-field-value h4 {
+        margin: 4pt 0 2pt;
+        color: #000;
+        break-after: avoid;
+    }
+    #knowledgeBase .kb-field-value pre {
+        white-space: pre-wrap;
+        padding: 4pt 6pt;
+        margin: 3pt 0;
+        break-inside: avoid;
+    }
+    #knowledgeBase .kb-field-value blockquote {
+        margin: 3pt 0;
+        border-left-color: #000;
+        color: #333;
+    }
+    /* Clickable asset tags / cross-refs are meaningless on paper */
+    #knowledgeBase .kb-field-value span[style],
+    #knowledgeBase .kb-seealso-list span,
+    #knowledgeBase .kb-crossref,
+    #knowledgeBase .kb-field-value a {
+        color: #000 !important;
+        text-decoration: none !important;
+    }
 }
 
 /* Asset Details Tab */
