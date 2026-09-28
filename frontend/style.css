@@ -725,6 +725,8 @@ details[open] .diagram-options-summary::before {
         box-shadow: none;
         border-radius: 0;
     }
+    /* The generic print rules above force #diagramViewer visible; override that */
+    body:has(#knowledgeBase.active) .tab-content:not(#knowledgeBase),
     body:has(#knowledgeBase.active) .container > h1,
     #knowledgeBase > h2,
     #knowledgeBase .search-section,
