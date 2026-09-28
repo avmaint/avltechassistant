@@ -650,202 +650,6 @@ details[open] .diagram-options-summary::before {
     font-size: 0.75em;
 }
 
-@media print {
-    body {
-        background: #fff;
-        color: #000;
-    }
-    .diagram-expand-btn { display: none !important; }
-
-    .top-actions,
-    .search-section,
-    .filter-section,
-    .tabs,
-    #assetResults,
-    #cableResults,
-    #diagramViewer > h3,
-    #diagramViewer .input-group,
-    #assetFilterCheckboxes {
-        display: none !important;
-    }
-    #diagramViewer {
-        display: block !important;
-        border: none;
-        padding: 0;
-    }
-    #diagramRenderArea {
-        border: none;
-        height: auto;
-    }
-    /* Page breaks for connections tables */
-    #diagramInputConnections,
-    #diagramOutputConnections,
-    #diagramInternalRoutes {
-        page-break-before: always;
-    }
-    #knowledgeBaseIssuesTable {
-        page-break-before: always;
-    }
-
-    /* Rack profile print mode: hide everything except the rack content */
-    body.print-rack-mode .tabs,
-    body.print-rack-mode .top-actions,
-    body.print-rack-mode .search-section,
-    body.print-rack-mode #assetResults,
-    body.print-rack-mode #cableResults,
-    body.print-rack-mode #diagramViewer,
-    body.print-rack-mode #crosspointViewer,
-    body.print-rack-mode #assetDetails,
-    body.print-rack-mode #knowledgeBase {
-        display: none !important;
-    }
-    body.print-rack-mode #locationViewer {
-        display: block !important;
-    }
-    body.print-rack-mode #locationViewer .search-section {
-        display: none !important;
-    }
-    body.print-rack-mode .rack-profile-container {
-        display: flex !important;
-    }
-    body.print-rack-mode .rack-svg-wrap svg g[style*="pointer"] {
-        cursor: default !important;
-    }
-
-    /* Knowledge Base print: when the KB tab is active, print only the expanded
-       issue(s) as a dense document — no app chrome, search, or collapsed rows. */
-    body:has(#knowledgeBase.active) {
-        padding: 0;
-        font-size: 10.5pt;
-        line-height: 1.35;
-    }
-    body:has(#knowledgeBase.active) .container {
-        max-width: none;
-        padding: 0;
-        box-shadow: none;
-        border-radius: 0;
-    }
-    /* The generic print rules above force #diagramViewer visible; override that */
-    body:has(#knowledgeBase.active) .tab-content:not(#knowledgeBase),
-    body:has(#knowledgeBase.active) .container > h1,
-    #knowledgeBase > h2,
-    #knowledgeBase .search-section,
-    #knowledgeBase .kb-expand-icon,
-    #knowledgeBase .kb-issue-section:has(.kb-issue-details:not(.expanded)) {
-        display: none !important;
-    }
-    #knowledgeBase.tab-content {
-        padding: 0;
-    }
-    #knowledgeBase .kb-issue-section {
-        border: none;
-        box-shadow: none;
-        border-radius: 0;
-        margin: 0;
-        overflow: visible;
-    }
-    #knowledgeBase .kb-issue-section + .kb-issue-section {
-        break-before: page;
-    }
-    #knowledgeBase .kb-issue-header {
-        display: block;
-        padding: 0 0 4pt;
-        margin-bottom: 6pt;
-        background: none;
-        border-bottom: 1.5pt solid #000;
-        break-after: avoid;
-    }
-    #knowledgeBase .kb-issue-id {
-        display: inline;
-        background: none;
-        padding: 0;
-        margin-right: 8pt;
-        min-width: 0;
-        font-size: 11pt;
-        color: #555;
-    }
-    #knowledgeBase .kb-issue-title {
-        font-size: 15pt;
-        font-weight: 700;
-        color: #000;
-    }
-    #knowledgeBase .kb-issue-details.expanded {
-        max-height: none;
-        overflow: visible;
-        padding: 0;
-        transition: none;
-    }
-    /* Label in a narrow left column, value beside it */
-    #knowledgeBase .kb-field {
-        display: grid;
-        grid-template-columns: 11em 1fr;
-        column-gap: 8pt;
-        margin: 0;
-        padding: 3pt 0;
-        border-bottom: 0.5pt solid #ccc;
-        line-height: 1.35;
-    }
-    #knowledgeBase .kb-field strong {
-        color: #000;
-        font-size: 9.5pt;
-    }
-    /* pre-wrap turns the newlines marked puts between block elements into
-       blank lines; keep author line breaks only inside the text blocks. */
-    #knowledgeBase .kb-field-value {
-        white-space: normal;
-    }
-    #knowledgeBase .kb-field-value p,
-    #knowledgeBase .kb-field-value li {
-        white-space: pre-line;
-    }
-    #knowledgeBase .kb-field-value > :first-child {
-        margin-top: 0;
-    }
-    #knowledgeBase .kb-field-value > :last-child {
-        margin-bottom: 0;
-    }
-    #knowledgeBase .kb-field-value p {
-        margin: 0 0 3pt;
-    }
-    #knowledgeBase .kb-field-value ul,
-    #knowledgeBase .kb-field-value ol,
-    #knowledgeBase .kb-seealso-list {
-        margin: 2pt 0;
-        padding-left: 16pt;
-    }
-    #knowledgeBase .kb-field-value li,
-    #knowledgeBase .kb-seealso-list li {
-        margin-bottom: 1pt;
-    }
-    #knowledgeBase .kb-field-value h1,
-    #knowledgeBase .kb-field-value h2,
-    #knowledgeBase .kb-field-value h3,
-    #knowledgeBase .kb-field-value h4 {
-        margin: 4pt 0 2pt;
-        color: #000;
-        break-after: avoid;
-    }
-    #knowledgeBase .kb-field-value pre {
-        white-space: pre-wrap;
-        padding: 4pt 6pt;
-        margin: 3pt 0;
-        break-inside: avoid;
-    }
-    #knowledgeBase .kb-field-value blockquote {
-        margin: 3pt 0;
-        border-left-color: #000;
-        color: #333;
-    }
-    /* Clickable asset tags / cross-refs are meaningless on paper */
-    #knowledgeBase .kb-field-value span[style],
-    #knowledgeBase .kb-seealso-list span,
-    #knowledgeBase .kb-crossref,
-    #knowledgeBase .kb-field-value a {
-        color: #000 !important;
-        text-decoration: none !important;
-    }
-}
-
 /* Asset Details Tab */
 #assetDetailsContainer {
     margin-top: var(--space-5);
@@ -1692,3 +1496,331 @@ details[open] .diagram-options-summary::before {
     color: #003d80;
 }
 
+/* ── Print ── kept last so it overrides the screen rules above */
+/* Print-only snapshot of the diagram, filled on beforeprint (script.js) */
+#diagramPrintImage { display: none; }
+
+@media print {
+    /* ── Page frame: drop the app shell so content fills the sheet ── */
+    * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        box-shadow: none !important;
+    }
+    body {
+        background: #fff;
+        color: #000;
+        padding: 0;
+        font-size: 10pt;
+        line-height: 1.35;
+    }
+    .container {
+        max-width: none;
+        padding: 0;
+        border-radius: 0;
+    }
+    .tab-content {
+        padding: 0;
+    }
+    .tab-content > h2 {
+        font-size: 14pt;
+        color: #000;
+        margin: 0 0 6pt;
+        padding-bottom: 3pt;
+        border-bottom: 1.5pt solid #000;
+    }
+    h3, h4 {
+        color: #000;
+        break-after: avoid;
+    }
+
+    /* ── Navigation, search and on-screen controls ── */
+    .container > h1,
+    .top-actions,
+    .tabs,
+    .tab-content:not(.active),
+    .search-section,
+    .filter-section,
+    .options-section,
+    .diagram-options-panel,
+    .diagram-export-bar,
+    .diagram-expand-btn,
+    .context-menu,
+    .crosspoint-controls,
+    .crosspoint-options,
+    .dashboard-toolbar button,
+    .dashboard-autorefresh-label,
+    .status-message,
+    .loading-spinner,
+    #assetFilterCheckboxes {
+        display: none !important;
+    }
+    .dashboard-toolbar {
+        display: block;
+        margin: 0 0 6pt;
+        padding: 0;
+        border: none;
+        background: none;
+    }
+    .dashboard-timestamp {
+        font-size: 9pt;
+    }
+
+    /* ── Tables: compact cells, light header ── */
+    table,
+    .connections-table {
+        margin: 3pt 0 8pt;
+        font-size: 9pt;
+    }
+    th, td,
+    .connections-table th,
+    .connections-table td,
+    .property-table thead th,
+    .property-table tbody td,
+    .licenses-table td,
+    .dash-exceptions-table th,
+    .dash-exceptions-table td,
+    .crosspoint-table td {
+        padding: 2pt 4pt;
+    }
+    th,
+    .connections-table th,
+    .property-table thead th,
+    .licenses-table thead th,
+    .dash-exceptions-table th {
+        background: #e5e7eb;
+        color: #000;
+        font-size: 8.5pt;
+    }
+    .connections-table th.sort-asc::after,
+    .connections-table th.sort-desc::after {
+        content: none;
+    }
+    tr {
+        break-inside: avoid;
+    }
+    thead {
+        display: table-header-group;
+    }
+
+    /* ── Cards and sections: flatten borders, shrink gaps ── */
+    .connections-section-card,
+    .dash-card,
+    .property-section,
+    #assetDetailsContainer {
+        margin: 0 0 8pt;
+        border-radius: 0;
+    }
+    #assetDetailsContainer {
+        padding: 0;
+        border: none;
+    }
+    .connections-section-card h3 {
+        padding: 2pt 4pt;
+        background: #e5e7eb;
+        color: #000;
+        font-size: 10pt;
+    }
+    .dash-card-header {
+        padding: 3pt 6pt;
+    }
+    .dash-ok-msg,
+    .dash-unavailable-msg,
+    .dash-pending-msg {
+        padding: 3pt 6pt;
+    }
+    .dash-banner {
+        margin-bottom: 6pt;
+    }
+    .dash-section-heading {
+        margin-bottom: 4pt;
+    }
+    .property-section {
+        padding: 4pt 6pt;
+    }
+    .partners-section, .knowledgebase-section, .network-section,
+    .installed-section, .manuals-section, .licenses-section {
+        margin-top: 8pt;
+        padding-top: 4pt;
+    }
+    .signal-path-summary {
+        padding: 3pt 6pt;
+        margin-bottom: 6pt;
+    }
+    .floorplan-section {
+        margin-bottom: 8pt;
+    }
+    .empty-state {
+        padding: 6pt 0;
+    }
+    .location-placeholder {
+        padding: 0;
+    }
+
+    /* Links and clickable tags print as plain text */
+    a,
+    .dash-asset-link,
+    .dash-kb-link,
+    .tab-content span[style*="cursor"] {
+        color: #000 !important;
+        text-decoration: none !important;
+    }
+
+    /* ── Diagram: print the SVG snapshot instead of the live canvas ── */
+    body:has(#diagramPrintImage svg) .diagram-canvas-wrap {
+        display: none;
+    }
+    #diagramPrintImage {
+        display: block;
+        margin: 0 0 8pt;
+    }
+    #diagramPrintImage svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 9in;
+    }
+
+    /* Rack profile print mode: hide everything except the rack content */
+    body.print-rack-mode .tabs,
+    body.print-rack-mode .top-actions,
+    body.print-rack-mode .search-section,
+    body.print-rack-mode #assetResults,
+    body.print-rack-mode #cableResults,
+    body.print-rack-mode #diagramViewer,
+    body.print-rack-mode #crosspointViewer,
+    body.print-rack-mode #assetDetails,
+    body.print-rack-mode #knowledgeBase {
+        display: none !important;
+    }
+    body.print-rack-mode #locationViewer {
+        display: block !important;
+    }
+    body.print-rack-mode #locationViewer .search-section {
+        display: none !important;
+    }
+    body.print-rack-mode .rack-profile-container {
+        display: flex !important;
+    }
+    body.print-rack-mode .rack-svg-wrap svg g[style*="pointer"] {
+        cursor: default !important;
+    }
+
+    /* Knowledge Base: print only the expanded issue(s) as a dense document;
+       the issue title replaces the tab heading. */
+    #knowledgeBase {
+        font-size: 10.5pt;
+    }
+    #knowledgeBase > h2,
+    #knowledgeBase .kb-expand-icon,
+    #knowledgeBase .kb-issue-section:has(.kb-issue-details:not(.expanded)) {
+        display: none !important;
+    }
+    #knowledgeBase .kb-issue-section {
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        margin: 0;
+        overflow: visible;
+    }
+    #knowledgeBase .kb-issue-section + .kb-issue-section {
+        break-before: page;
+    }
+    #knowledgeBase .kb-issue-header {
+        display: block;
+        padding: 0 0 4pt;
+        margin-bottom: 6pt;
+        background: none;
+        border-bottom: 1.5pt solid #000;
+        break-after: avoid;
+    }
+    #knowledgeBase .kb-issue-id {
+        display: inline;
+        background: none;
+        padding: 0;
+        margin-right: 8pt;
+        min-width: 0;
+        font-size: 11pt;
+        color: #555;
+    }
+    #knowledgeBase .kb-issue-title {
+        font-size: 15pt;
+        font-weight: 700;
+        color: #000;
+    }
+    #knowledgeBase .kb-issue-details.expanded {
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        transition: none;
+    }
+    /* Label in a narrow left column, value beside it */
+    #knowledgeBase .kb-field {
+        display: grid;
+        grid-template-columns: 11em 1fr;
+        column-gap: 8pt;
+        margin: 0;
+        padding: 3pt 0;
+        border-bottom: 0.5pt solid #ccc;
+        line-height: 1.35;
+    }
+    #knowledgeBase .kb-field strong {
+        color: #000;
+        font-size: 9.5pt;
+    }
+    /* pre-wrap turns the newlines marked puts between block elements into
+       blank lines; keep author line breaks only inside the text blocks. */
+    #knowledgeBase .kb-field-value {
+        white-space: normal;
+    }
+    #knowledgeBase .kb-field-value p,
+    #knowledgeBase .kb-field-value li {
+        white-space: pre-line;
+    }
+    #knowledgeBase .kb-field-value > :first-child {
+        margin-top: 0;
+    }
+    #knowledgeBase .kb-field-value > :last-child {
+        margin-bottom: 0;
+    }
+    #knowledgeBase .kb-field-value p {
+        margin: 0 0 3pt;
+    }
+    #knowledgeBase .kb-field-value ul,
+    #knowledgeBase .kb-field-value ol,
+    #knowledgeBase .kb-seealso-list {
+        margin: 2pt 0;
+        padding-left: 16pt;
+    }
+    #knowledgeBase .kb-field-value li,
+    #knowledgeBase .kb-seealso-list li {
+        margin-bottom: 1pt;
+    }
+    #knowledgeBase .kb-field-value h1,
+    #knowledgeBase .kb-field-value h2,
+    #knowledgeBase .kb-field-value h3,
+    #knowledgeBase .kb-field-value h4 {
+        margin: 4pt 0 2pt;
+        color: #000;
+        break-after: avoid;
+    }
+    #knowledgeBase .kb-field-value pre {
+        white-space: pre-wrap;
+        padding: 4pt 6pt;
+        margin: 3pt 0;
+        break-inside: avoid;
+    }
+    #knowledgeBase .kb-field-value blockquote {
+        margin: 3pt 0;
+        border-left-color: #000;
+        color: #333;
+    }
+    /* Clickable asset tags / cross-refs are meaningless on paper */
+    #knowledgeBase .kb-field-value span[style],
+    #knowledgeBase .kb-seealso-list span,
+    #knowledgeBase .kb-crossref,
+    #knowledgeBase .kb-field-value a {
+        color: #000 !important;
+        text-decoration: none !important;
+    }
+}

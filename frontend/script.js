@@ -1480,6 +1480,25 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Print: the live Cytoscape canvas doesn't reflow to the page, so swap in a
+    // static SVG snapshot (shown only by the print stylesheet).
+    window.addEventListener('beforeprint', function () {
+        const holder = document.getElementById('diagramPrintImage');
+        if (!holder) return;
+        holder.innerHTML = '';
+        if (!cyInstance || !document.getElementById('diagramViewer').classList.contains('active')) return;
+        let svgStr = null;
+        try { svgStr = generateDiagramSvg(); } catch (e) { console.warn('[print] SVG snapshot failed:', e); }
+        if (!svgStr) return;
+        holder.innerHTML = svgStr;
+        const svg = holder.querySelector('svg');
+        if (svg && !svg.getAttribute('viewBox')) {
+            const w = parseFloat(svg.getAttribute('width'));
+            const h = parseFloat(svg.getAttribute('height'));
+            if (w && h) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        }
+    });
+
     // Diagram expand / fullscreen toggle
     (function () {
         const btn  = document.getElementById('diagramExpandBtn');
