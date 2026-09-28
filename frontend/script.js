@@ -1483,20 +1483,43 @@ document.addEventListener("DOMContentLoaded", () => {
     // Print: the live Cytoscape canvas doesn't reflow to the page, so swap in a
     // static SVG snapshot (shown only by the print stylesheet).
     window.addEventListener('beforeprint', function () {
+        const viewer = document.getElementById('diagramViewer');
         const holder = document.getElementById('diagramPrintImage');
-        if (!holder) return;
+        if (!viewer || !holder) return;
         holder.innerHTML = '';
-        if (!cyInstance || !document.getElementById('diagramViewer').classList.contains('active')) return;
+        viewer.classList.remove('print-landscape');
+        if (!cyInstance || !viewer.classList.contains('active')) return;
+
+        let w = 0, h = 0;
         let svgStr = null;
         try { svgStr = generateDiagramSvg(); } catch (e) { console.warn('[print] SVG snapshot failed:', e); }
-        if (!svgStr) return;
-        holder.innerHTML = svgStr;
-        const svg = holder.querySelector('svg');
-        if (svg && !svg.getAttribute('viewBox')) {
-            const w = parseFloat(svg.getAttribute('width'));
-            const h = parseFloat(svg.getAttribute('height'));
-            if (w && h) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        if (svgStr) {
+            holder.innerHTML = svgStr;
+            const svg = holder.querySelector('svg');
+            if (svg) {
+                w = parseFloat(svg.getAttribute('width'));
+                h = parseFloat(svg.getAttribute('height'));
+                if (!svg.getAttribute('viewBox') && w && h) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+                svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+            }
+        } else {
+            // Fallback: built-in raster export (lacks the HTML node labels, but fits the page)
+            try {
+                const bb = cyInstance.elements().boundingBox();
+                w = bb.w; h = bb.h;
+                const img = document.createElement('img');
+                img.src = cyInstance.png({ full: true, bg: '#ffffff', scale: 2, output: 'base64uri' });
+                holder.appendChild(img);
+            } catch (e) { console.warn('[print] PNG snapshot failed:', e); }
         }
+        // Wide diagrams print on a landscape page (see @page wide in style.css)
+        if (w && h && w / h > 1.3) viewer.classList.add('print-landscape');
+    });
+    window.addEventListener('afterprint', function () {
+        const holder = document.getElementById('diagramPrintImage');
+        if (holder) holder.innerHTML = '';
+        const viewer = document.getElementById('diagramViewer');
+        if (viewer) viewer.classList.remove('print-landscape');
     });
 
     // Diagram expand / fullscreen toggle

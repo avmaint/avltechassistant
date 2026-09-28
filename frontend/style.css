@@ -1497,6 +1497,10 @@ details[open] .diagram-options-summary::before {
 }
 
 /* ── Print ── kept last so it overrides the screen rules above */
+@page wide {
+    size: landscape;
+}
+
 /* Print-only snapshot of the diagram, filled on beforeprint (script.js) */
 #diagramPrintImage { display: none; }
 
@@ -1667,43 +1671,71 @@ details[open] .diagram-options-summary::before {
     }
 
     /* ── Diagram: print the SVG snapshot instead of the live canvas ── */
-    body:has(#diagramPrintImage svg) .diagram-canvas-wrap {
+    body:has(#diagramPrintImage > *) .diagram-canvas-wrap {
         display: none;
     }
     #diagramPrintImage {
         display: block;
         margin: 0 0 8pt;
     }
-    #diagramPrintImage svg {
+    /* Fit to page width, capped so the whole diagram stays on one sheet;
+       preserveAspectRatio (set in script.js) keeps it left-aligned. */
+    #diagramPrintImage svg,
+    #diagramPrintImage img {
         display: block;
         width: 100%;
         height: auto;
-        max-height: 9in;
+        max-height: 9.3in;
+        object-fit: contain;
+        object-position: left top;
+    }
+    #diagramViewer.print-landscape {
+        page: wide;
+    }
+    #diagramViewer.print-landscape #diagramPrintImage svg,
+    #diagramViewer.print-landscape #diagramPrintImage img {
+        max-height: 6.8in;
     }
 
-    /* Rack profile print mode: hide everything except the rack content */
-    body.print-rack-mode .tabs,
-    body.print-rack-mode .top-actions,
-    body.print-rack-mode .search-section,
-    body.print-rack-mode #assetResults,
-    body.print-rack-mode #cableResults,
-    body.print-rack-mode #diagramViewer,
-    body.print-rack-mode #crosspointViewer,
-    body.print-rack-mode #assetDetails,
-    body.print-rack-mode #knowledgeBase {
-        display: none !important;
+    /* ── Crosspoint: vertical column headers, tight cells, scale by size ── */
+    .crosspoint-table {
+        width: auto;
+        margin: 0;
+        font-size: 8pt;
+        line-height: 1.1;
     }
-    body.print-rack-mode #locationViewer {
-        display: block !important;
+    .crosspoint-table th,
+    .crosspoint-table td {
+        padding: 1pt 2pt;
+        min-width: 9pt;
     }
-    body.print-rack-mode #locationViewer .search-section {
-        display: none !important;
+    .crosspoint-table thead th:not(.row-header) {
+        writing-mode: vertical-rl;
+        white-space: nowrap;
+        text-align: left;
+        vertical-align: bottom;
+        padding: 3pt 1pt;
     }
-    body.print-rack-mode .rack-profile-container {
-        display: flex !important;
+    @supports (writing-mode: sideways-lr) {
+        .crosspoint-table thead th:not(.row-header) {
+            writing-mode: sideways-lr;
+        }
     }
-    body.print-rack-mode .rack-svg-wrap svg g[style*="pointer"] {
-        cursor: default !important;
+    .crosspoint-table .row-header {
+        white-space: nowrap;
+    }
+    /* Column-count tiers (header cells incl. the corner cell) */
+    #crosspointViewer:has(.crosspoint-table thead th:nth-child(25)) {
+        page: wide;
+    }
+    .crosspoint-table:has(thead th:nth-child(41)) { font-size: 7pt; }
+    .crosspoint-table:has(thead th:nth-child(61)) { font-size: 6pt; }
+    .crosspoint-table:has(thead th:nth-child(81)) { font-size: 5pt; }
+    .crosspoint-table:has(thead th:nth-child(121)) { font-size: 4pt; }
+    .crosspoint-table:has(thead th:nth-child(41)) :is(th, td) {
+        padding-left: 0.5pt;
+        padding-right: 0.5pt;
+        min-width: 0;
     }
 
     /* Knowledge Base: print only the expanded issue(s) as a dense document;
