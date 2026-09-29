@@ -1808,7 +1808,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 cableData = [];
             }
             currentDiagramCableData = cableData;
-            renderTable(cableData, cableTableContainer, 'cableResults'); // Pass table ID
+            renderTable(cableTableRows(cableData), cableTableContainer, 'cableResults');
         } catch (error) {
             console.error("Error fetching cable data:", error);
             const errMsg = `Error loading cable data: ${error.message}`;
@@ -2815,6 +2815,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderConnectionsTable(data, container, tableId, title);
             });
         });
+    }
+
+    // Cables tab rows: drop soft-deleted cables and the audit columns that
+    // follow Pathway (deleted_at, created_at, updated_at, updated_by).
+    function cableTableRows(cables) {
+        return cables
+            .filter(c => !c.deleted_at)
+            .map(c => {
+                const keys = Object.keys(c);
+                const cut = keys.indexOf('Pathway');
+                if (cut < 0) return c;
+                return Object.fromEntries(keys.slice(0, cut + 1).map(k => [k, c[k]]));
+            });
     }
 
     // --- Utility: Render Table ---
