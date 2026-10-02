@@ -91,6 +91,30 @@ Unlike the crosspoint and Klang panels (which only *read* from CueCommander), th
 
 This panel (and the crosspoint/network panels alongside it) existed in production, fully built, with zero mention in this file or `requirements.md` prior to 2026-07-28 — the only trace was a standalone planning doc (`feature-op-dashboard.md`) that predates the Klang panel entirely and was never updated once it shipped. The consequence was concrete, not hypothetical: `POST /dashboard/klang/setvariance` had a real bug (silently dropped every OSC send while always reporting success — see CueCommander-NR `requirements.md` KL-06/07/08) that shipped and went unnoticed, in part because there was no test anywhere — in this repo or CueCommander-NR's — that exercised the endpoint at all. A feature that isn't in the requirements doc doesn't get requirements-driven test coverage. When a feature ships, its planning doc's content belongs folded into `requirements.md`/`design.md` and the planning doc retired, not left to accumulate alongside the real docs as a second, drifting source of truth.
 
+# Subsystem: Print Output
+
+## Overview
+
+There is no separate print view — printing is entirely `@media print` rules in `frontend/style.css` plus a small `beforeprint`/`afterprint` hook in `frontend/script.js`. Functional behaviour is in `requirements.md` ("Printing (all tabs)"); this section covers the decisions that aren't obvious from the CSS.
+
+## The print block must stay last in `style.css`
+
+Most print overrides have the same specificity as the screen rules they replace (`.connections-section-card h3`, `.dash-card`, …), so source order decides. The `@media print` block lives at the end of the file; screen rules added after it would silently win in print. Add new screen styles above it.
+
+## Tab scoping
+
+`.tab-content:not(.active)` is hidden in print, so only the active tab prints — there are no per-tab print modes. Per-tab tweaks are written against the tab's own id (`#knowledgeBase …`, `#crosspointViewer …`) or with `:has()` (e.g. hiding collapsed KB issues, crosspoint column-count tiers). The older `body.print-rack-mode` class (Print Rack button) is the one exception and still works on top of this.
+
+## Diagram: SVG snapshot instead of the live canvas
+
+The Cytoscape canvas is sized in screen pixels and doesn't reflow to the page, so printed as-is it was clipped (left half only). On `beforeprint`, if the Diagram tab is active and a diagram is loaded, `generateDiagramSvg()` (the Export SVG renderer — synchronous, viewport-independent) is injected into `#diagramPrintImage`, given a `viewBox` and `preserveAspectRatio="xMinYMin meet"`, and the CSS hides `.diagram-canvas-wrap` whenever that holder has content. Fallback is `cy.png()` (lacks HTML node labels). The aspect ratio decides `#diagramViewer.print-landscape`. `afterprint` clears both.
+
+Because this depends on `script.js`, a browser holding a stale cached `script.js` prints the clipped canvas — the first thing to check if a diagram printout looks wrong.
+
+## Cables tab columns
+
+`/cables/filter` returns every database column. `cableTableRows()` in `script.js` trims each row to the columns up to `Pathway` and drops rows with `deleted_at` before `renderTable()`; `currentDiagramCableData` keeps the full rows. Note that the avl_data `/cables` endpoint already excludes soft-deleted rows, so deleted cables normally only appear when this app's cached data predates the deletion — **Reload Data** clears them.
+
 # Current Known Limitations
 
 See `requirements.md` Section 7 (Known Issues) and Section 10 (Pending Enhancements) for the live list — kept there rather than duplicated here since it changes per-feature, not architecturally.
