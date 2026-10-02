@@ -2096,10 +2096,12 @@ async def search_assets(
     sector: Optional[str] = None,
     purc_from: Optional[str] = None,
     invoice: Optional[str] = None,
+    q: Optional[str] = None,
     in_service_only: bool = True,
 ):
     """
     Search for assets by asset tag, manufacturer, model, location, or financial fields.
+    `q` is a free-text, case-insensitive substring match against every field.
     Optionally filter to only in-service items (default: True).
     """
     filtered_assets = df_assets.copy()
@@ -2146,6 +2148,14 @@ async def search_assets(
         filtered_assets = filtered_assets[
             filtered_assets["Invoice"].fillna("").astype(str).str.contains(invoice, case=False, na=False)
         ]
+
+    if q and q.strip():
+        searchable = filtered_assets.drop(columns=["AssetTagNorm"], errors="ignore")
+        text = searchable.fillna("").astype(str)
+        mask = text.apply(
+            lambda col: col.str.contains(q.strip(), case=False, regex=False, na=False)
+        ).any(axis=1)
+        filtered_assets = filtered_assets[mask]
 
     filtered_assets = filtered_assets.drop(columns=["AssetTagNorm"], errors="ignore")
     processed_assets = clean_dataframe_for_json(filtered_assets)

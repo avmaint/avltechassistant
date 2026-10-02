@@ -6,10 +6,11 @@ This document outlines the requirements for the interactive web application.
 
 -   **Interactive Data Query:** The application must allow users to query asset and cable data dynamically.
 -   **Asset Search:**
-    -   Searchable by asset tag, manufacturer, and model.
+    -   Searchable by asset tag, manufacturer, and model, plus a "Search all fields" box (`GET /assets/search?q=`) that does a case-insensitive substring match against every asset field. All criteria combine (AND).
+    -   If a search returns exactly one asset, that asset becomes the global asset (see **Global Asset Selection**).
     -   Results displayed in a tabular format.
     -   Asset tags in the results table are clickable links that navigate to the Asset Details tab for that asset and update the Connectivity Diagram in the background.
-    -   Each row in the asset table exposes a "View in Rack" action button that switches to the Location tab and renders the rack profile for that asset.
+    -   Each row in the asset table exposes a "View in Rack" action button that makes that asset the global asset and switches to the Location tab.
     -   Pressing Enter in any search input field triggers the search.
     -   "In Service Only" checkbox filters results to only show assets with InService="Y" (checked by default).
 -   **Cable Filtering:**
@@ -17,7 +18,11 @@ This document outlines the requirements for the interactive web application.
     -   Filterable by connection direction: in-bound, out-bound, or both.
     -   Filterable by cable type.
     -   Filtered cable data displayed in a tabular format. The Cables tab table shows the cable columns up to and including `Pathway`; the audit columns that follow it (`deleted_at`, `created_at`, `updated_at`, `updated_by`) are not shown on screen or in print. Soft-deleted cables (non-empty `deleted_at`) are never shown.
--   **Connectivity Diagram Rendering:**
+-   **Global Asset Selection:** Looking up an asset on any tab makes it the global asset, and every asset-centric tab then shows that asset without re-entering it:
+    -   Triggers: Asset Details, Location, Network (asset tag lookup), Connectivity Diagram (when the target is an asset, not a cable ID), Knowledge Base (Asset Tag field), the Source field of Cross-point and Signal Path, a single-result Asset Search, and clicking an asset tag link or "View in Rack" anywhere.
+    -   Only values that exactly match a known asset tag (case-insensitive, from `/assets/tags`) go global; cable IDs and partial tags search on their own tab only.
+    -   Effects: Asset Details, Location and Connectivity Diagram reload for the asset; the Knowledge Base shows that asset's issues (other KB criteria are cleared); Cross-point and Signal Path get it pre-filled as Source; the Network tab's lookup field is filled and its details load when the tab is shown; the URL hash is updated.
+    -   The tab the user searched from keeps its own inputs as typed (e.g. a KB search with an asset tag and free text keeps the free text; Cross-point/Signal Path keep their Target).
     -   Dynamically generate and display connectivity diagrams based on filtered cable data.
     -   Diagrams should visually represent connections between assets.
     -   The diagramming technique should render the actual diagram, not just DOT code.
@@ -123,7 +128,7 @@ This document outlines the requirements for the interactive web application.
         -   Rack devices use RackU notation (e.g., `F23`, `R10`) supporting subdivision suffixes (e.g., `F30-5-4-4`) to place half/partial-width devices correctly.
         -   Clicking any device tile in the rack profile navigates to the Asset Details tab for that device.
         -   A "Print Rack" button triggers a print-mode view that isolates the rack profile for clean hard copy output.
-        -   When the active asset changes (via Connectivity Diagram or Asset Details), the Location tab updates automatically in the background.
+        -   When the global asset changes (from any tab), the Location tab updates automatically in the background.
     -   **Signal Path Finder Tab:**
         -   Provides source and target asset tag inputs and a configurable max-hops limit (default 10).
         -   Uses breadth-first search over the cable graph to find the shortest directed cable path between two assets.

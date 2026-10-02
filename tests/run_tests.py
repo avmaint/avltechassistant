@@ -104,6 +104,28 @@ def test_asset_search_in_service_filter():
         raise TestFailure(f"Expected more assets without filter ({len(data_all)}) than with filter ({len(data_in_service)})")
 
 
+def test_asset_search_all_fields():
+    """`q` matches any field, case-insensitively, and every result contains it."""
+    seed = request_json(f"/assets/search?asset_tag={urllib.parse.quote('2507-0700')}&in_service_only=false")
+    if not seed:
+        raise TestFailure("No asset returned for 2507-0700")
+    # Search by a non-tag field value, in a different case, to prove it isn't tag-only
+    model = (seed[0].get("Model") or "").strip()
+    if not model:
+        raise TestFailure("2507-0700 has no Model to search on")
+    data = request_json(f"/assets/search?q={urllib.parse.quote(model.swapcase())}&in_service_only=false")
+    tags = {(row.get("AssetTag") or "").upper() for row in data}
+    if "2507-0700" not in tags:
+        raise TestFailure(f"q={model.swapcase()!r} did not return 2507-0700")
+    needle = model.lower()
+    for row in data:
+        if not any(needle in str(v).lower() for v in row.values()):
+            raise TestFailure(f"Row {row.get('AssetTag')} has no field containing {model!r}")
+    none = request_json(f"/assets/search?q={urllib.parse.quote('zz-no-such-value-zz')}&in_service_only=false")
+    if none:
+        raise TestFailure(f"Expected no results for a nonsense query, got {len(none)}")
+
+
 def test_cable_filter_has_rows():
     target_tag = "2507-0700"
     data = request_json(f"/cables/filter?target_tag={urllib.parse.quote(target_tag)}&direction=both")
@@ -1772,6 +1794,7 @@ TESTS: List[Tuple[str, Callable[[], None]]] = [
     ("GET /health returns ok status", test_health_endpoint),
     ("Asset search returns usage", test_asset_search_returns_usage),
     ("Asset search in-service filter", test_asset_search_in_service_filter),
+    ("Asset search all-fields (q) filter", test_asset_search_all_fields),
     ("Cable filter returns rows", test_cable_filter_has_rows),
     ("Graph contains usage line", test_graph_contains_usage_line),
     ("Graph respects custom field selections", test_graph_respects_custom_fields),

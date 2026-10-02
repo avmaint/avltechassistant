@@ -91,6 +91,14 @@ Unlike the crosspoint and Klang panels (which only *read* from CueCommander), th
 
 This panel (and the crosspoint/network panels alongside it) existed in production, fully built, with zero mention in this file or `requirements.md` prior to 2026-07-28 — the only trace was a standalone planning doc (`feature-op-dashboard.md`) that predates the Klang panel entirely and was never updated once it shipped. The consequence was concrete, not hypothetical: `POST /dashboard/klang/setvariance` had a real bug (silently dropped every OSC send while always reporting success — see CueCommander-NR `requirements.md` KL-06/07/08) that shipped and went unnoticed, in part because there was no test anywhere — in this repo or CueCommander-NR's — that exercised the endpoint at all. A feature that isn't in the requirements doc doesn't get requirements-driven test coverage. When a feature ships, its planning doc's content belongs folded into `requirements.md`/`design.md` and the planning doc retired, not left to accumulate alongside the real docs as a second, drifting source of truth.
 
+# Subsystem: Global Asset Selection
+
+All tab searches funnel through `setGlobalTargetAsset(tag, { skip })` in `frontend/script.js`; functional rules are in `requirements.md` ("Global Asset Selection").
+
+-   **Asset vs. not-an-asset:** callers first run `resolveKnownAsset(value)`, which waits for `/assets/tags` (`assetTagsReadyPromise`) and returns the canonical tag or `null`. Only a resolved tag goes global — this is what keeps a cable ID typed into the Diagram target, or a partial tag, from hijacking the other tabs. If `/assets/tags` fails to load, nothing goes global and each tab behaves as a standalone search.
+-   **`skip`:** the calling tab is already doing its own load with the user's exact inputs, so it passes its area (`diagram`, `kb`, `crosspoint`, `signalPath`) to avoid a double fetch and to avoid overwriting what the user typed (e.g. clearing KB free text, or resetting the Cross-point target dropdown via `handleAssetInputChange`).
+-   **Late-declared inputs:** `setGlobalTargetAsset` looks up some inputs by id rather than through the closure's `const`s, because those consts are declared after `restoreFromUrlHash()` runs during startup and would be in the temporal dead zone.
+
 # Subsystem: Print Output
 
 ## Overview

@@ -154,6 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const assetTagSearch = document.getElementById("assetTagSearch");
     const manufacturerSearch = document.getElementById("manufacturerSearch");
     const modelSearch = document.getElementById("modelSearch");
+    const assetFreeformSearch = document.getElementById("assetFreeformSearch");
     const inServiceOnlyCheckbox = document.getElementById("inServiceOnlyCheckbox");
     const assetColumnSelect = document.getElementById("assetColumnSelect");
     const searchAssetsBtn = document.getElementById("searchAssetsBtn");
@@ -164,6 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (assetTagSearch.value) params.append("asset_tag", assetTagSearch.value);
         if (manufacturerSearch.value) params.append("manufacturer", manufacturerSearch.value);
         if (modelSearch.value) params.append("model", modelSearch.value);
+        if (assetFreeformSearch && assetFreeformSearch.value.trim()) params.append("q", assetFreeformSearch.value.trim());
         const inServiceValue = inServiceOnlyCheckbox ? inServiceOnlyCheckbox.checked : true;
         params.append("in_service_only", inServiceValue.toString());
         for (const [key, val] of Object.entries(_assetSearchExtraParams)) {
@@ -182,6 +184,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
             assetTableData = Array.isArray(data) ? data : [];
             renderAssetTable();
+            if (assetTableData.length === 1 && assetTableData[0].AssetTag) {
+                setGlobalTargetAsset(assetTableData[0].AssetTag);
+            }
         } catch (error) {
             console.error("Error fetching assets:", error);
             assetTableContainer.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span>Error loading assets: ${error.message}</div>`;
@@ -191,7 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
     searchAssetsBtn.addEventListener("click", performAssetSearch);
 
     // Add Enter key support for asset search inputs
-    [assetTagSearch, manufacturerSearch, modelSearch].forEach(input => {
+    [assetTagSearch, manufacturerSearch, modelSearch, assetFreeformSearch].filter(Boolean).forEach(input => {
         input.addEventListener("keypress", (e) => {
             if (e.key === "Enter") {
                 e.preventDefault();
@@ -261,7 +266,9 @@ document.addEventListener("DOMContentLoaded", () => {
             alert("Please enter an Asset Tag to view details.");
             return;
         }
-        await fetchAndRenderAssetDetails(targetAssetTag);
+        const known = await resolveKnownAsset(targetAssetTag);
+        if (known) setGlobalTargetAsset(known);
+        else await fetchAndRenderAssetDetails(targetAssetTag); // shows the not-found state
     };
 
     viewAssetDetailsBtn.addEventListener("click", performViewAssetDetails);
@@ -342,7 +349,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    searchKnowledgeBaseBtn.addEventListener("click", performKBSearch);
+    // User-initiated KB search: an asset tag in the Asset Tag field becomes the global asset
+    const performKBSearchFromUser = async () => {
+        const known = await resolveKnownAsset(kbTagSearch.value);
+        if (known) setGlobalTargetAsset(known, { skip: ["kb"] });
+        performKBSearch();
+    };
+
+    searchKnowledgeBaseBtn.addEventListener("click", performKBSearchFromUser);
 
     // Enter key support for text inputs (multi-select uses native selection, no auto-submit)
     [kbIssueIdSearch, kbTagSearch, kbFreeformSearch].forEach(input => {
@@ -350,7 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
             input.addEventListener("keypress", (e) => {
                 if (e.key === "Enter") {
                     e.preventDefault();
-                    performKBSearch();
+                    performKBSearchFromUser();
                 }
             });
         }
@@ -601,8 +615,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 rackBtn.textContent = "View in Rack";
                 rackBtn.className = "action-link-btn";
                 rackBtn.addEventListener("click", () => {
+                    setGlobalTargetAsset(assetTagValue);
                     document.querySelector('.tab-button[data-tab="locationViewer"]').click();
-                    fetchAndRenderRackProfile(assetTagValue).catch(e => console.error("rack profile error:", e));
                 });
                 actionsTd.appendChild(rackBtn);
             }
@@ -744,6 +758,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const targetTag = targetInputValue;
         const cableId = "";
+
+        const knownAsset = await resolveKnownAsset(targetInputValue);
+        if (knownAsset) setGlobalTargetAsset(knownAsset, { skip: ["diagram"] });
 
         baseTargetTag = targetInputValue;
         updateUrlHash(targetInputValue);
@@ -1574,6 +1591,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         lastCrosspointQuery = { source: sourceTag, target: targetTag };
+        const knownSource = await resolveKnownAsset(sourceTag);
+        if (knownSource) setGlobalTargetAsset(knownSource, { skip: ["crosspoint"] });
         await fetchAndRenderCrosspointMatrix(sourceTag, targetTag);
     };
 
@@ -2930,30 +2949,59 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Returns the canonical asset tag for a typed value, or null if it isn't a
+    // known asset (e.g. a cable ID or a partial tag).
+    async function resolveKnownAsset(value) {
+        if (!value || !value.trim()) return null;
+        await assetTagsReadyPromise;
+        return resolveAssetDisplay(value);
+    }
+
     // Sets the global target asset and refreshes all tabs that show single-asset data.
     // Two-asset tabs (Cross-point, Signal Path) get their first/source field pre-filled.
     // Does NOT switch tabs — callers decide navigation.
-    async function setGlobalTargetAsset(tag) {
+    // `skip` names areas the caller is already handling itself, so they aren't
+    // overwritten or loaded twice: 'diagram', 'kb', 'crosspoint', 'signalPath'.
+    async function setGlobalTargetAsset(tag, { skip = [] } = {}) {
         if (!tag) return;
         globalTargetAsset = tag;
         updateUrlHash(tag);
 
+        // Looked up by id: some of these consts are declared later in this
+        // closure, and this can run before they're initialized.
+        const byId = id => document.getElementById(id);
+
         // Fill all single-asset inputs
-        if (assetDetailsTagInput) assetDetailsTagInput.value = tag;
-        if (locationAssetTagInput) locationAssetTagInput.value = tag;
-        if (targetTagFilter) targetTagFilter.value = tag;
+        if (byId(ASSET_DETAILS_INPUT_ID)) byId(ASSET_DETAILS_INPUT_ID).value = tag;
+        if (byId("locationAssetTagInput")) byId("locationAssetTagInput").value = tag;
+        if (byId("networkAssetTagSearch")) byId("networkAssetTagSearch").value = tag;
+        if (!skip.includes("diagram") && targetTagFilter) targetTagFilter.value = tag;
 
         // Pre-fill first field of two-asset tabs
-        if (signalPathSource) signalPathSource.value = tag;
-        if (crosspointSourceInput) {
+        if (!skip.includes("signalPath") && byId("signalPathSource")) byId("signalPathSource").value = tag;
+        if (!skip.includes("crosspoint") && crosspointSourceInput) {
             crosspointSourceInput.value = tag;
             handleAssetInputChange("source", tag);
         }
 
-        // Update and reload Knowledge Base for this asset
-        if (kbTagSearch) kbTagSearch.value = tag;
-        performKBSearch();
+        // Knowledge Base: show this asset's issues (clear other criteria so they
+        // don't narrow the search to something unrelated)
+        if (!skip.includes("kb")) {
+            if (kbIssueIdSearch) kbIssueIdSearch.value = "";
+            if (kbFreeformSearch) kbFreeformSearch.value = "";
+            if (kbActiveIssueTags) Array.from(kbActiveIssueTags.options).forEach(o => { o.selected = false; });
+            if (kbTagSearch) kbTagSearch.value = tag;
+            performKBSearch();
+        }
 
+        // Load all single-asset tabs in parallel (fire-and-forget; each manages its own UI state)
+        fetchAndRenderAssetDetails(tag);
+        fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
+        if (byId("networkViewer")?.classList.contains("active")) {
+            fetchAndRenderNetworkDetails(tag);
+        }
+
+        if (skip.includes("diagram")) return;
         // Reset diagram state
         baseTargetTag = tag;
         hiddenNodes.clear();
@@ -2969,13 +3017,6 @@ document.addEventListener("DOMContentLoaded", () => {
             protocol: protocolFilter ? protocolFilter.value.trim() : ""
         };
         initializeExpansionMap(baseTargetTag, currentFilters.direction);
-
-        // Load all single-asset tabs in parallel (fire-and-forget; each manages its own UI state)
-        fetchAndRenderAssetDetails(tag);
-        fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
-        if (document.getElementById("networkViewer")?.classList.contains("active")) {
-            fetchAndRenderNetworkDetails(tag);
-        }
         fetchAndRenderDiagramAndCables(
             currentFilters.targetTag,
             currentFilters.direction,
@@ -3463,11 +3504,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const printRackBtn = document.getElementById("printRackBtn");
     const locationStatus = document.getElementById("locationStatus");
 
+    async function performViewLocation() {
+        const tag = locationAssetTagInput ? locationAssetTagInput.value.trim() : "";
+        if (!tag) return;
+        const known = await resolveKnownAsset(tag);
+        if (known) setGlobalTargetAsset(known);
+        else fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
+    }
     if (viewLocationBtn) {
-        viewLocationBtn.addEventListener("click", () => {
-            const tag = locationAssetTagInput ? locationAssetTagInput.value.trim() : "";
-            if (tag) fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
-        });
+        viewLocationBtn.addEventListener("click", performViewLocation);
     }
     if (printRackBtn) {
         printRackBtn.addEventListener("click", () => {
@@ -3480,8 +3525,7 @@ document.addEventListener("DOMContentLoaded", () => {
         locationAssetTagInput.addEventListener("keypress", (e) => {
             if (e.key === "Enter") {
                 e.preventDefault();
-                const tag = locationAssetTagInput.value.trim();
-                if (tag) fetchAndRenderRackProfile(tag).catch(e => console.error("rack profile error:", e));
+                performViewLocation();
             }
         });
     }
@@ -3934,6 +3978,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const source = signalPathSource ? signalPathSource.value.trim() : "";
         const target = signalPathTarget ? signalPathTarget.value.trim() : "";
         if (!source || !target) { alert("Enter both source and target asset tags."); return; }
+        const knownSource = await resolveKnownAsset(source);
+        if (knownSource) setGlobalTargetAsset(knownSource, { skip: ["signalPath"] });
         const maxHops = signalPathMaxHops ? parseInt(signalPathMaxHops.value, 10) || 10 : 10;
 
         if (signalPathStatus) { signalPathStatus.textContent = "Searching…"; signalPathStatus.classList.remove("hidden"); }
@@ -4778,8 +4824,9 @@ document.addEventListener("DOMContentLoaded", () => {
     async function performNetworkAssetTagSearch() {
         const tag = networkAssetTagSearch?.value.trim();
         if (!tag) return;
-        setGlobalTargetAsset(tag);
-        await fetchAndRenderNetworkDetails(tag);
+        const known = await resolveKnownAsset(tag);
+        if (known) setGlobalTargetAsset(known);
+        else await fetchAndRenderNetworkDetails(tag);
     }
 
     async function performNetworkAddrSearch() {
